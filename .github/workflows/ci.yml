@@ -18,10 +18,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install pytest pysam
+      - run: python -m pip install pytest pysam numpy
       - run: python -m compileall -q bin
       - run: python -m json.tool nextflow_schema.json >/dev/null
       - run: pytest -q
+
+      - name: Pipeline scripts are executable
+        run: |
+          not_executable=$(git ls-files -s bin | awk '$1 != "100755" && $4 != "bin/ASE_model.stan" {print $4}')
+          if [ -n "${not_executable}" ]; then
+            echo "not executable, so the container cannot run them:" >&2
+            echo "${not_executable}" >&2
+            exit 1
+          fi
 
       - name: Container tag matches the manifest version
         run: |
