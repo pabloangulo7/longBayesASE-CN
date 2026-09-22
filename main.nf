@@ -171,7 +171,9 @@ workflow RNA_WF {
     def bam = RNA_ALIGN.out.bam.mix(PREPARE_RNA_BAM.out.bam)
     OARFISH_ASSIGN(bam, tx2gene, params.oarfish_score, params.oarfish_display_threshold,
                    params.oarfish_strand)
-    RNA_HAPLOTYPE_COUNT(OARFISH_ASSIGN.out.assignments, params.rna_probability)
+    RNA_HAPLOTYPE_COUNT(OARFISH_ASSIGN.out.assignments,
+                        params.gene_resolve_probability, params.isoform_resolve_probability,
+                        params.gene_min_probability, params.isoform_min_probability)
     MERGE_RNA_COUNTS(RNA_HAPLOTYPE_COUNT.out.gene_counts.map { _meta, path -> path }.collect(),
                      'gene_counts.tsv')
     MERGE_ISOFORM_COUNTS(RNA_HAPLOTYPE_COUNT.out.isoform_counts.map { _meta, path -> path }.collect(),
@@ -200,7 +202,9 @@ workflow PRIORS_WF {
     SIM_RNA_ALIGN(TILE_TRANSCRIPTS.out.reads, transcriptome)
     SIM_OARFISH_ASSIGN(SIM_RNA_ALIGN.out.bam, tx2gene, params.oarfish_score,
                        params.oarfish_display_threshold, params.oarfish_strand)
-    SIM_RNA_HAPLOTYPE_COUNT(SIM_OARFISH_ASSIGN.out.assignments, params.rna_probability)
+    SIM_RNA_HAPLOTYPE_COUNT(SIM_OARFISH_ASSIGN.out.assignments,
+                            params.gene_resolve_probability, params.isoform_resolve_probability,
+                            params.gene_min_probability, params.isoform_min_probability)
     BUILD_MAPPING_PRIORS(
         simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_counts, 'SIM_HAP1'),
         simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_counts, 'SIM_HAP2'),

@@ -163,7 +163,7 @@ def test_balanced_ase_shards(tmp_path: Path) -> None:
     assert {"group", "test", "groupA", "groupB"}.issubset(shard_rows[0])
 
 
-def test_rna_probability_locking(tmp_path: Path) -> None:
+def test_read_locks_onto_the_first_assignment_above_the_threshold(tmp_path: Path) -> None:
     assignments = tmp_path / "assignments.tsv"
     assignments.write_text(
         "read_id\ttranscript_id\tgene_id\tprobability\n"
@@ -183,6 +183,47 @@ def test_rna_probability_locking(tmp_path: Path) -> None:
     counts = read_tsv(tmp_path / "locked.counts.tsv")
     assert counts[0]["ID"] == "G1"
     assert counts[0]["H1"] == "1"
+
+
+def test_min_probability_recovers_a_dominant_isoform(tmp_path: Path) -> None:
+    """A trace probability on a sibling isoform must not discard the read.
+
+    r1 is one isoform read that cannot tell the haplotypes apart, so its
+    probability splits over T1_hap1/T1_hap2 and never reaches the resolve
+    threshold; the 0.05 left on T2 then makes it look multi-feature. r2 has no
+    isoform above the filter at all.
+    """
+    assignments = tmp_path / "assignments.tsv"
+    assignments.write_text(
+        "read_id\ttranscript_id\tgene_id\tprobability\n"
+        "r1\tT1_hap1\tG1_hap1\t0.45\n"
+        "r1\tT1_hap2\tG1_hap2\t0.45\n"
+        "r1\tT2_hap1\tG1_hap1\t0.05\n"
+        "r1\tT2_hap2\tG1_hap2\t0.05\n"
+        "r2\tT3_hap1\tG2_hap1\t0.05\n"
+        "r2\tT4_hap2\tG2_hap2\t0.05\n"
+    )
+
+    def run(mode: str, min_probability: float) -> dict[str, str]:
+        prefix = tmp_path / f"{mode}-{min_probability}"
+        run_script(
+            "count_rna_haplotypes.py",
+            "--assignments", assignments,
+            "--mode", mode,
+            "--resolve-threshold", 0.9,
+            "--min-probability", min_probability,
+            "--output-prefix", prefix,
+        )
+        return {row["Read_ID"]: row["Group"] for row in read_tsv(Path(f"{prefix}.readgroups.tsv"))}
+
+    assert run("isoforms", 0)["r1"] == "NonHS_multimapping_multigene"
+    assert run("isoforms", 0.1)["r1"] == "NonHS"
+    # Every assignment of r2 is below the filter, so it belongs to no feature.
+    assert run("isoforms", 0.1)["r2"] == "Unclassified"
+    counted = {row["ID"] for row in read_tsv(tmp_path / "isoforms-0.1.counts.tsv")}
+    assert counted == {"T1"}
+    # Gene level needs no filter here: both isoforms belong to the same gene.
+    assert run("genes", 0)["r1"] == "NonHS_multimapping"
 
 
 def test_reference_split_uses_required_haplotype_suffixes(tmp_path: Path) -> None:

@@ -87,7 +87,10 @@ process RNA_HAPLOTYPE_COUNT {
 
     input:
     tuple val(meta), path(assignments)
-    val resolve_threshold
+    val gene_resolve_probability
+    val isoform_resolve_probability
+    val gene_min_probability
+    val isoform_min_probability
 
     output:
     tuple val(meta), path("${meta.sample}.genes.counts.tsv"), emit: gene_counts
@@ -101,10 +104,18 @@ process RNA_HAPLOTYPE_COUNT {
     # is waited for by PID, so a pass killed for memory fails the task and is retried.
     pids=()
     for mode in genes isoforms; do
+        if [ "\${mode}" = genes ]; then
+            resolve=${gene_resolve_probability}
+            min_probability=${gene_min_probability}
+        else
+            resolve=${isoform_resolve_probability}
+            min_probability=${isoform_min_probability}
+        fi
         count_rna_haplotypes.py \
             --assignments ${assignments} \
             --mode \${mode} \
-            --resolve-threshold ${resolve_threshold} \
+            --resolve-threshold \${resolve} \
+            --min-probability \${min_probability} \
             --output-prefix ${meta.sample}.\${mode} &
         pids+=(\$!)
     done

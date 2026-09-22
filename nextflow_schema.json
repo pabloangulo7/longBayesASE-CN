@@ -28,7 +28,10 @@
       "title": "Optional tuning",
       "type": "object",
       "properties": {
-        "rna_probability": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.9},
+        "gene_resolve_probability": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.9},
+        "isoform_resolve_probability": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.9},
+        "gene_min_probability": {"type": "number", "minimum": 0, "exclusiveMaximum": 1, "default": 0},
+        "isoform_min_probability": {"type": "number", "minimum": 0, "exclusiveMaximum": 1, "default": 0},
         "oarfish_score": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 1.0},
         "oarfish_display_threshold": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.001},
         "oarfish_strand": {"type": "string", "enum": ["fw", "rc", "both", ""], "default": "fw"},

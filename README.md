@@ -223,7 +223,10 @@ Defaults reproduce the implemented workflow. Most analyses only need the paramet
 
 | Parameter | Default | Purpose |
 |---|---:|---|
-| `--rna_probability` | `0.90` | Probability required to resolve a read to one gene or isoform. |
+| `--gene_resolve_probability` | `0.90` | Probability one assignment needs to resolve a read to a single gene, discarding the rest. |
+| `--isoform_resolve_probability` | `0.90` | The same for the isoform pass. |
+| `--gene_min_probability` | `0` | Assignment probability a gene needs before it counts towards a read; anything below it is ignored. |
+| `--isoform_min_probability` | `0` | The same for the isoform pass. `0.1` recovers the reads a dominant isoform would otherwise lose to trace probabilities on its siblings. |
 | `--oarfish_score` | `1.0` | Oarfish alignment-score threshold. |
 | `--oarfish_display_threshold` | `0.001` | Minimum assignment probability written by Oarfish. |
 | `--oarfish_strand` | `fw` | Strand used for oriented ONT cDNA. |
