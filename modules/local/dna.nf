@@ -138,12 +138,15 @@ process DNA_COVERAGE {
 
     script:
     """
-    # The four read groups are independent, so they run in parallel.
+    # The four read groups are independent, so they run in parallel; each one is
+    # waited for by PID so that a failure fails the task.
+    pids=()
     for group in HS NonHS HS_copy NonHS_copy; do
         bedtools coverage -a ${genes_bed} -b ${meta.dna_id}.\${group}.bam -mean \
           | awk 'BEGIN{OFS="\\t"}{print \$4,\$NF}' > ${meta.dna_id}.\${group}.coverage.tsv &
+        pids+=(\$!)
     done
-    wait
+    for pid in "\${pids[@]}"; do wait "\${pid}"; done
     """
 
     stub:

@@ -50,6 +50,20 @@ def test_rna_assignment_classification(tmp_path: Path) -> None:
     assert counts["G2"]["NonHS_complex"] == "1"
 
 
+def test_rna_counting_rejects_a_read_split_into_two_blocks(tmp_path: Path) -> None:
+    """Counting streams one read at a time, so a read must not reappear later."""
+    assignments = tmp_path / "assignments.tsv"
+    assignments.write_text(
+        "read_id\ttranscript_id\tgene_id\tprobability\n"
+        "r1\tT1_hap1\tG1_hap1\t0.5\n"
+        "r2\tT1_hap2\tG1_hap2\t1\n"
+        "r1\tT1_hap2\tG1_hap2\t0.5\n"
+    )
+    with pytest.raises(subprocess.CalledProcessError):
+        run_script("count_rna_haplotypes.py", "--assignments", assignments, "--mode", "genes",
+                   "--output-prefix", tmp_path / "split")
+
+
 def test_mapping_priors(tmp_path: Path) -> None:
     header = "ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\n"
     h1 = tmp_path / "h1.tsv"

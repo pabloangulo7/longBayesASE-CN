@@ -97,15 +97,18 @@ process RNA_HAPLOTYPE_COUNT {
 
     script:
     """
-    # Gene and isoform level are independent passes over the same file.
+    # Gene and isoform level are independent passes over the same file. Each one
+    # is waited for by PID, so a pass killed for memory fails the task and is retried.
+    pids=()
     for mode in genes isoforms; do
         count_rna_haplotypes.py \
             --assignments ${assignments} \
             --mode \${mode} \
             --resolve-threshold ${resolve_threshold} \
             --output-prefix ${meta.sample}.\${mode} &
+        pids+=(\$!)
     done
-    wait
+    for pid in "\${pids[@]}"; do wait "\${pid}"; done
     """
 
     stub:
