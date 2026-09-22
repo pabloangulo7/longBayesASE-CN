@@ -1,0 +1,7 @@
+sample	condition	dna_id	rna	dna	ploidy
+A1	ANEUPLOID	DNA_A	tests/data/reads.fastq		chr1:2:1
+A2	ANEUPLOID	DNA_A	tests/data/reads.fastq		chr1:2:1
+A3	ANEUPLOID	DNA_A	tests/data/reads.fastq		chr1:2:1
+W1	WT	DNA_WT	tests/data/reads.fastq		chr1:1:1
+W2	WT	DNA_WT	tests/data/reads.fastq		chr1:1:1
+W3	WT	DNA_WT	tests/data/reads.fastq		chr1:1:1

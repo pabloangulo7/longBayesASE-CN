@@ -1,0 +1,7 @@
+##gff-version 3
+chr1_hap1	stub	gene	1	12	.	+	.	ID=GENE1;gene_id=GENE1;gene_name=GENE1
+chr1_hap1	stub	transcript	1	12	.	+	.	ID=TX1;Parent=GENE1;gene_id=GENE1;transcript_id=TX1
+chr1_hap1	stub	exon	1	12	.	+	.	ID=EX1;Parent=TX1;gene_id=GENE1;transcript_id=TX1
+chr1_hap2	stub	gene	1	12	.	+	.	ID=GENE1;gene_id=GENE1;gene_name=GENE1
+chr1_hap2	stub	transcript	1	12	.	+	.	ID=TX1;Parent=GENE1;gene_id=GENE1;transcript_id=TX1
+chr1_hap2	stub	exon	1	12	.	+	.	ID=EX1;Parent=TX1;gene_id=GENE1;transcript_id=TX1

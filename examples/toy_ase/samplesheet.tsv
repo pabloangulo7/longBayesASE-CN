@@ -1,0 +1,7 @@
+sample	condition	dna_id	rna	dna	ploidy
+Sample1_R1	Control	Sample1			chr1:1:1
+Sample1_R2	Control	Sample1			chr1:1:1
+Sample1_R3	Control	Sample1			chr1:1:1
+Sample2_R1	Treatment	Sample2			chr7:2:1
+Sample2_R2	Treatment	Sample2			chr7:2:1
+Sample2_R3	Treatment	Sample2			chr7:2:1

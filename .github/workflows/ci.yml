@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest pysam
+      - run: python -m compileall -q bin
+      - run: python -m json.tool nextflow_schema.json >/dev/null
+      - run: pytest -q
+
+      - name: Container tag matches the manifest version
+        run: |
+          version=$(sed -n "s/.*version *= *'\(.*\)'.*/\1/p" nextflow.config | head -1)
+          tag=$(sed -n "s/.*container_tag *= *'\(.*\)'.*/\1/p" nextflow.config)
+          echo "manifest=$version container=$tag"
+          test -n "$version" && test "$version" = "$tag"
+
+  stub:
+    name: Workflow wiring (stub, Nextflow ${{ matrix.nextflow }})
+    runs-on: ubuntu-latest
+    # Wiring is checked on the minimum supported, the current stable and the
+    # edge release; a failure on edge does not block.
+    continue-on-error: ${{ endsWith(matrix.nextflow, '-edge') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        nextflow: ['24.10.5', '25.10.7', '26.08.0-edge']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: nf-core/setup-nextflow@v2
+        with:
+          version: '${{ matrix.nextflow }}'
+
+      # Stub runs check channel wiring only: every command is replaced by a
+      # printf, so they must assert on the files that come out.
+      - name: diffASE step
+        run: |
+          nextflow run . -profile test -stub-run \
+            --step diffase \
+            --samplesheet tests/data/diffase_samplesheet.tsv \
+            --counts tests/data/combined_counts.tsv \
+            --priors tests/data/mapping_priors.tsv \
+            --contrast ANEUPLOID:WT \
+            --ase_shards 2 --ase_iterations 20 --ase_warmup 10 \
+            --outdir test-results
+          test -s test-results/diffase/longBayesASE-CN.results.tsv
+
+      - name: Full pipeline
+        run: |
+          nextflow run . -profile test -stub-run \
+            --step all \
+            --samplesheet tests/data/full_samplesheet.tsv \
+            --fasta tests/data/diploid.fa \
+            --gff3 tests/data/diploid.gff3 \
+            --contrast ANEUPLOID:WT \
+            --ase_shards 1 \
+            --outdir full-test-results
+          test -s full-test-results/diffase/longBayesASE-CN.results.tsv
+          test -s full-test-results/dna/gene_copy_numbers.tsv
+          test -s full-test-results/rna/gene_counts.tsv
+          test -s full-test-results/rna/isoform_counts.tsv
+          test -s full-test-results/priors/mapping_priors.tsv
+          test -s full-test-results/priors/mapping_priors.isoforms.tsv
+
+      - name: Several contrasts and isoform level
+        run: |
+          nextflow run . -profile test -stub-run \
+            --step all --level isoform \
+            --samplesheet tests/data/full_samplesheet.tsv \
+            --fasta tests/data/diploid.fa \
+            --gff3 tests/data/diploid.gff3 \
+            --contrast ANEUPLOID:WT,WT:ANEUPLOID \
+            --ase_shards 1 \
+            --outdir multi-test-results
+          test -s multi-test-results/diffase/longBayesASE-CN.results.tsv
+          test -s multi-test-results/diffase/shards/ANEUPLOID_VS_WT.shard_0001.tsv
+          test -s multi-test-results/diffase/shards/WT_VS_ANEUPLOID.shard_0001.tsv
+
+      - name: Samplesheet ploidy needs only the GFF3
+        run: |
+          nextflow run . -profile test -stub-run \
+            --step diffase \
+            --samplesheet tests/data/ploidy_samplesheet.tsv \
+            --rna_counts tests/data/combined_counts.tsv \
+            --priors tests/data/mapping_priors.tsv \
+            --gff3 tests/data/diploid.gff3 \
+            --contrast ANEUPLOID:WT \
+            --ase_shards 1 \
+            --outdir ploidy-test-results
+          test -s ploidy-test-results/diffase/longBayesASE-CN.results.tsv
+
+      - name: Unknown parameters are rejected
+        run: |
+          if nextflow run . -profile test -stub-run --not_a_real_param 1; then
+            echo 'expected the run to fail on an unknown parameter' >&2
+            exit 1
+          fi
+
+  integration:
+    name: Real ASE run in the container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: longbayesase-cn:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: nf-core/setup-nextflow@v2
+        with:
+          version: '24.10.5'
+
+      # The real test: two genes with known behaviour. GENE_BALANCED scales with
+      # copy number and must NOT be differential; GENE_DIFFASE keeps the
+      # duplicated haplotype flat and must be. This fails if the model, the
+      # copy-number term, the sharding or the merge break.
+      - name: Differential ASE on the toy dataset
+        run: |
+          nextflow run . -profile test,docker -ansi-log false \
+            --step diffase \
+            --samplesheet tests/data/diffase_samplesheet.tsv \
+            --counts tests/data/combined_counts.tsv \
+            --priors tests/data/mapping_priors.tsv \
+            --contrast ANEUPLOID:WT \
+            --ase_shards 2 \
+            --outdir test-results \
+            --ase_iterations 4000 --ase_warmup 1000 \
+            -process.container longbayesase-cn:ci
+          python3 tests/check_toy_results.py
+
+      - name: Raw-read full pipeline on two genes
+        run: |
+          python3 tests/make_toy_full_data.py
+          nextflow run . -profile test,docker -ansi-log false \
+            --step all \
+            --samplesheet tests/toy_full/samplesheet.tsv \
+            --fasta tests/toy_full/diploid.fa \
+            --gff3 tests/toy_full/diploid.gff3 \
+            --contrast ANEUPLOID:WT \
+            --tiling_read_length 400 --tiling_step 200 \
+            --min_simulated_reads 1 \
+            --ase_shards 2 --ase_iterations 4000 --ase_warmup 1000 \
+            --outdir full-integration-results \
+            -process.container longbayesase-cn:ci
+          python3 tests/check_full_toy_results.py

@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use longBayesASE-CN, please cite this software and the BayesASE model papers listed in the README."
+title: "longBayesASE-CN"
+type: software
+abstract: "Long-read differential allele-specific expression with mapping-bias and haplotype-specific copy-number correction."
+authors:
+  - family-names: "Angulo Lara"
+    given-names: "Pablo"
+repository-code: "https://github.com/pabloangulo7/longBayesASE-CN"
+license: MIT
+version: 0.3.0
+date-released: 2026-09-21

@@ -1,0 +1,4 @@
+sample	condition	dna_id	rna	dna	ploidy
+Sample1_R1	Control	Sample1	/data/rna/Sample1_R1.fastq.gz	/data/dna/Sample1.ubam	
+Sample1_R2	Control	Sample1	/data/rna/Sample1_R2.bam	/data/dna/Sample1.genome.bam	
+Sample2_R1	Treatment	Sample2	/data/rna/Sample2_R1.fastq.gz	/data/dna/Sample2.fastq.gz	chr7:2:1

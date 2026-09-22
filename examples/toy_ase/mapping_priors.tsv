@@ -1,0 +1,3 @@
+ID	H1_prior	H2_prior	H1_misassignment	H2_misassignment	n_hap1	n_hap2
+GENE_BALANCED	0.82	0.83	0.01	0.01	100	100
+GENE_DIFFASE	0.80	0.80	0.01	0.01	100	100

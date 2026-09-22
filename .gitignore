@@ -1,0 +1,11 @@
+.nextflow*
+work/
+*results/
+tests/toy_full/
+*.log
+.DS_Store
+__pycache__/
+.pytest_cache/
+*.pyc
+.idea/
+.vscode/

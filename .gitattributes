@@ -1,0 +1,6 @@
+*.nf text eol=lf
+*.py text eol=lf
+*.R text eol=lf
+*.stan text eol=lf
+*.tsv text eol=lf
+*.yml text eol=lf

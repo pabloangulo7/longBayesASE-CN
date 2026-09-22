@@ -1,0 +1,7 @@
+sample	condition	dna_id	rna	dna	ploidy
+WT1	WT	WT_DNA1			chr1:1:1
+WT2	WT	WT_DNA2			chr1:1:1
+WT3	WT	WT_DNA3			chr1:1:1
+AN1	ANEUPLOID	AN_DNA1			chr7:2:1
+AN2	ANEUPLOID	AN_DNA2			chr7:2:1
+AN3	ANEUPLOID	AN_DNA3			chr7:2:1
