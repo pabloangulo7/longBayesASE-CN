@@ -3,8 +3,8 @@
 include { VALIDATE_SAMPLESHEET; NORMALIZE_READS as NORMALIZE_DNA_READS; NORMALIZE_READS as NORMALIZE_RNA_READS; PREPARE_DNA_BAM; PREPARE_RNA_BAM } from './modules/local/inputs'
 include { PREPARE_REFERENCE; SPLIT_DIPLOID_GFF; LIFTOFF_ANNOTATE; BUILD_ANNOTATION_BUNDLE; BUILD_FEATURE_MAP } from './modules/local/annotation'
 include { DNA_ALIGN; DNA_MAX_SCORE; DNA_FEATURE_ASSIGN; DNA_SPLIT; DNA_COVERAGE; COMPUTE_COPY_NUMBER; COPY_NUMBER_FROM_PLOIDY } from './modules/local/dna'
-include { RNA_ALIGN; OARFISH_ASSIGN; RNA_HAPLOTYPE_COUNT; MERGE_RNA_COUNTS; MERGE_RNA_COUNTS as MERGE_ISOFORM_COUNTS } from './modules/local/rna'
-include { RNA_ALIGN as SIM_RNA_ALIGN; OARFISH_ASSIGN as SIM_OARFISH_ASSIGN; RNA_HAPLOTYPE_COUNT as SIM_RNA_HAPLOTYPE_COUNT } from './modules/local/rna'
+include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_RNA_COUNTS; MERGE_RNA_COUNTS as MERGE_ISOFORM_COUNTS; MERGE_OARFISH_QUANT } from './modules/local/rna'
+include { RNA_ALIGN as SIM_RNA_ALIGN; RNA_HAPLOTYPE_COUNT as SIM_RNA_HAPLOTYPE_COUNT } from './modules/local/rna'
 include { TILE_TRANSCRIPTS; BUILD_MAPPING_PRIORS } from './modules/local/simulation'
 include { PREPARE_ASE_INPUT; PREPARE_COMBINED_ASE_INPUT; COMPILE_ASE_MODEL; SPLIT_ASE_INPUT; RUN_ASE_SHARD; MERGE_ASE_RESULTS } from './modules/local/ase'
 
@@ -169,19 +169,21 @@ workflow RNA_WF {
     RNA_ALIGN(NORMALIZE_RNA_READS.out.reads, transcriptome)
     PREPARE_RNA_BAM(input.aligned.map { meta, paths -> tuple(meta, paths[0]) })
     def bam = RNA_ALIGN.out.bam.mix(PREPARE_RNA_BAM.out.bam)
-    OARFISH_ASSIGN(bam, tx2gene, params.oarfish_score, params.oarfish_display_threshold,
-                   params.oarfish_strand)
-    RNA_HAPLOTYPE_COUNT(OARFISH_ASSIGN.out.assignments,
-                        params.gene_resolve_probability, params.isoform_resolve_probability,
-                        params.gene_min_probability, params.isoform_min_probability)
+    // Haplotype-specific counts for the allele-specific model come from the
+    // alignments; expression for differential expression and isoform usage
+    // comes from Oarfish.
+    RNA_HAPLOTYPE_COUNT(bam, tx2gene, params.rna_strand)
     MERGE_RNA_COUNTS(RNA_HAPLOTYPE_COUNT.out.gene_counts.map { _meta, path -> path }.collect(),
                      'gene_counts.tsv')
     MERGE_ISOFORM_COUNTS(RNA_HAPLOTYPE_COUNT.out.isoform_counts.map { _meta, path -> path }.collect(),
                          'isoform_counts.tsv')
+    OARFISH_QUANT(bam, params.oarfish_score, params.rna_strand, params.oarfish_bootstraps)
+    MERGE_OARFISH_QUANT(OARFISH_QUANT.out.quant.map { _meta, path -> path }.collect(), tx2gene)
 
     emit:
-    counts         = MERGE_RNA_COUNTS.out.counts
-    isoform_counts = MERGE_ISOFORM_COUNTS.out.counts
+    counts           = MERGE_RNA_COUNTS.out.counts
+    isoform_counts   = MERGE_ISOFORM_COUNTS.out.counts
+    transcript_quant = MERGE_OARFISH_QUANT.out.transcripts
 }
 
 
@@ -200,11 +202,8 @@ workflow PRIORS_WF {
     TILE_TRANSCRIPTS(tiled, isoform_usage, tx2gene, params.tiling_read_length,
                      params.tiling_step, params.tiling_max_replicates)
     SIM_RNA_ALIGN(TILE_TRANSCRIPTS.out.reads, transcriptome)
-    SIM_OARFISH_ASSIGN(SIM_RNA_ALIGN.out.bam, tx2gene, params.oarfish_score,
-                       params.oarfish_display_threshold, params.oarfish_strand)
-    SIM_RNA_HAPLOTYPE_COUNT(SIM_OARFISH_ASSIGN.out.assignments,
-                            params.gene_resolve_probability, params.isoform_resolve_probability,
-                            params.gene_min_probability, params.isoform_min_probability)
+    // Tiles are cut from the transcripts in their own orientation.
+    SIM_RNA_HAPLOTYPE_COUNT(SIM_RNA_ALIGN.out.bam, tx2gene, 'fw')
     BUILD_MAPPING_PRIORS(
         simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_counts, 'SIM_HAP1'),
         simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_counts, 'SIM_HAP2'),
@@ -333,9 +332,9 @@ workflow {
         def priors
         if (params.priors) priors = requiredFile(params.priors, 'priors')
         else {
-            // The isoform table is already there, so the priors are weighted by
-            // expression without the user having to supply anything.
-            def usage = RNA_WF.out.isoform_counts
+            // The Oarfish transcript table is already there, so the priors are
+            // weighted by expression without the user having to supply anything.
+            def usage = RNA_WF.out.transcript_quant
             if (isoformLevel()) usage = isoformUsage()
             else if (params.isoform_usage) usage = requiredFile(params.isoform_usage, 'isoform_usage')
             PRIORS_WF(REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,

@@ -26,8 +26,10 @@ flowchart LR
     DC --> CN[Gene copy numbers]
     R[ONT cDNA<br/>FASTQ, uBAM or BAM] --> RC[Haplotype-specific RNA quantification]
     A --> RC
+    R --> Q[Oarfish expression quantification]
+    Q --> E[Gene and transcript expression]
     A --> T[Calculation of priors by read simulation]
-    RC --> U[Isoform usage]
+    Q --> U[Isoform usage]
     U -.-> T
     T --> P[Mapping priors]
     CN --> M[Copy-number-aware BayesASE]
@@ -99,8 +101,11 @@ Multiple raw read files for one library may be separated with semicolons. An ali
 |---|---|
 | `reference/` | Diploid GFF3, gene BED/SAF, transcriptomes and annotation summary. |
 | `dna/gene_copy_numbers.tsv` | `sample`, gene `ID`, chromosome, `CN_H1`, `CN_H2`. |
-| `rna/gene_counts.tsv` | `sample`, gene `ID`, `H1`, `H2`, `NonHS`. |
+| `rna/gene_counts.tsv` | `sample`, gene `ID`, `H1`, `H2`, `NonHS`: haplotype-specific counts for the allele-specific model. |
 | `rna/isoform_counts.tsv` | The same table at isoform level. |
+| `rna/gene_quant.tsv` | `sample`, gene `ID`, `num_reads`: Oarfish expression with both haplotypes summed, for differential expression. |
+| `rna/transcript_quant.tsv` | The same per transcript, for isoform usage. |
+| `rna/oarfish/` | Oarfish output per library, including the inferential replicates (`*.infreps.pq`) and the unique/ambiguous read counts (`*.ambig_info.tsv`). |
 | `priors/mapping_priors.tsv` | Per-gene H1 and H2 mapping probabilities. The header records how the tiles were weighted. |
 | `priors/mapping_priors.isoforms.tsv` | The same probabilities per isoform, for isoform-level analyses. |
 | `diffase/longBayesASE-CN.results.tsv` | Allelic imbalance, differential ASE, p-values, ROPE and fit status. |
@@ -145,7 +150,12 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --outdir results
 ```
 
-FASTQ/uBAM is aligned to the generated diploid transcriptome; a `.bam` in the RNA column is used directly. The outputs are `rna/gene_counts.tsv` and `rna/isoform_counts.tsv`, both with the columns `sample`, `ID`, `H1`, `H2`, `NonHS`.
+FASTQ/uBAM is aligned to the generated diploid transcriptome; a `.bam` in the RNA column is used directly and must keep every alignment of a read together, as minimap2 writes it, not sorted by coordinate.
+
+The alignments are used twice:
+
+- **Haplotype-specific counts** (`rna/gene_counts.tsv`, `rna/isoform_counts.tsv`, columns `sample`, `ID`, `H1`, `H2`, `NonHS`). A read is described by the alignments that reach its best alignment score: H1 or H2 when all of them fall on one haplotype, NonHS when both haplotypes explain it equally well. The haplotype rests on the sequence alone, never on an abundance estimate, so the simulated reads behind the priors are classified by exactly the same rule. Reads whose best alignments fall on several genes are reported in the multigene and complex categories of `rna/counts/` and left out of the model.
+- **Expression** (`rna/gene_quant.tsv`, `rna/transcript_quant.tsv`) from Oarfish, with the two haplotypes of every transcript summed. Oarfish resolves reads shared between transcripts by expectation-maximization, and its inferential replicates carry that uncertainty into differential expression or isoform-usage analyses.
 
 ### Differential ASE
 
@@ -156,7 +166,7 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --step diffase \
   --samplesheet samples.tsv \
   --rna_counts results/rna/gene_counts.tsv \
-  --isoform_usage results/rna/isoform_counts.tsv \
+  --isoform_usage results/rna/transcript_quant.tsv \
   --copy_number results/dna/gene_copy_numbers.tsv \
   --fasta assembly.fa --gff3 assembly.gff3 \
   --contrast Aneuploid:Control \
@@ -167,13 +177,15 @@ Results go to `diffase/longBayesASE-CN.results.tsv`, where the `test` column nam
 
 #### Mapping priors
 
+The priors are the `r1` and `r2` of the model. Every transcript of each haplotype is cut into overlapping tiles, the tiles of each haplotype are aligned to the diploid transcriptome as a separate library, and they are classified by the same rule as the real reads: `r1` is the fraction of the reads simulated from H1 that come out as H1, the rest being NonHS, and likewise for `r2`.
+
 | You supply | What happens |
 |---|---|
 | `--priors mapping_priors.tsv` | Used as given. |
 | nothing | Simulated from the annotation. A gene's probability is the average over its isoforms, weighted by their length. |
-| `--isoform_usage isoform_counts.tsv` | Simulated and weighted by how much each isoform is expressed instead of by its length. |
+| `--isoform_usage transcript_quant.tsv` | Simulated and weighted by how much each isoform is expressed instead of by its length. |
 
-`--step all` weights by expression on its own, because `rna/isoform_counts.tsv` is produced along the way. The usage table is summed over every sample before it is used: a prior built from one condition would no longer cancel out of the differential test.
+`--step all` weights by expression on its own, because `rna/transcript_quant.tsv` is produced along the way. The usage table is summed over every sample before it is used: a prior built from one condition would no longer cancel out of the differential test.
 
 #### Copy number
 
@@ -223,13 +235,9 @@ Defaults reproduce the implemented workflow. Most analyses only need the paramet
 
 | Parameter | Default | Purpose |
 |---|---:|---|
-| `--gene_resolve_probability` | `0.90` | Probability one assignment needs to resolve a read to a single gene, discarding the rest. |
-| `--isoform_resolve_probability` | `0.90` | The same for the isoform pass. |
-| `--gene_min_probability` | `0` | Assignment probability a gene needs before it counts towards a read; anything below it is ignored. |
-| `--isoform_min_probability` | `0` | The same for the isoform pass. `0.1` recovers the reads a dominant isoform would otherwise lose to trace probabilities on its siblings. |
-| `--oarfish_score` | `1.0` | Oarfish alignment-score threshold. |
-| `--oarfish_display_threshold` | `0.001` | Minimum assignment probability written by Oarfish. |
-| `--oarfish_strand` | `fw` | Strand used for oriented ONT cDNA. |
+| `--rna_strand` | `fw` | Orientation a cDNA read must have on its transcript: `fw` for oriented ONT cDNA, `rc` or `both`. Applies to the haplotype counts and to Oarfish. |
+| `--oarfish_score` | `1.0` | Fraction of a read's best alignment score an alignment needs for Oarfish to consider it. At `1.0` Oarfish sees exactly the best alignments the haplotype counts are built from. |
+| `--oarfish_bootstraps` | `30` | Oarfish inferential replicates; `0` skips them. |
 | `--copy_number_level` | `chromosome` | `chromosome` or `gene`. |
 | `--cn_change_threshold` | `1.2` | Fold change from the diploid baseline, in either direction, that makes a chromosome aneuploid. |
 | `--gene_copies` | `all` | `all` sums the coverage of every copy Liftoff found for a gene; `primary` keeps only the canonical locus. |
@@ -238,7 +246,7 @@ Defaults reproduce the implemented workflow. Most analyses only need the paramet
 | `--tiling_read_length` | `1000` | Simulated transcript-tile length. |
 | `--tiling_step` | `100` | Distance between consecutive tiles. |
 | `--min_simulated_reads` | `1` | Simulated reads a gene needs before it gets a prior. The tiling is exhaustive, not a sample, so a low count means few possible start positions rather than a noisy estimate: a transcript shorter than the read length has exactly one. Raising it drops short genes, and the prior table reports `n_hap1` and `n_hap2` for filtering afterwards instead. |
-| `--isoform_usage` | – | Isoform count table used to weight the tiling by expression. |
+| `--isoform_usage` | – | Oarfish transcript table (`rna/transcript_quant.tsv`) used to weight the tiling by expression. |
 | `--tiling_max_replicates` | `3` | Maximum tile replicates for the dominant isoform of a gene when weighting is on. |
 | `--ase_shards` | `100` | Parallel groups of genes fitted by Stan, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per gene. |
@@ -261,7 +269,7 @@ NonHS: [CN_H1 × (1-r1)/alpha + CN_H2 × (1-r2) × alpha] × beta
 theta:  1 / (alpha² + 1)
 ```
 
-`CN_H1` and `CN_H2` correct for haplotype dosage. `r1` and `r2` are the simulated mapping probabilities. `alpha=1` and `theta=0.5` indicate balanced per-copy expression. The result table reports allelic-imbalance p-values for each condition, `diffAI_pvalue`, posterior differences, credible intervals and `rope_value`.
+`CN_H1` and `CN_H2` correct for haplotype dosage. `r1` and `r2` are the simulated mapping probabilities: their ratio corrects mapping bias between the haplotypes, and their level sets how many reads the model expects in NonHS. `alpha=1` and `theta=0.5` indicate balanced per-copy expression. The result table reports allelic-imbalance p-values for each condition, `diffAI_pvalue`, posterior differences, credible intervals and `rope_value`.
 
 ## Citation
 

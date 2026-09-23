@@ -24,44 +24,90 @@ def read_tsv(path: Path):
         return list(csv.DictReader(rows, delimiter="\t"))
 
 
-def test_rna_assignment_classification(tmp_path: Path) -> None:
-    assignments = tmp_path / "assignments.tsv"
-    assignments.write_text(
-        "read_id\ttranscript_id\tgene_id\tprobability\n"
-        "r1\tT1_hap1\tG1_hap1\t1\n"
-        "r2\tT1_hap1\tG1_hap1\t0.5\n"
-        "r2\tT1_hap2\tG1_hap2\t0.5\n"
-        "r3\tT1_hap1\tG1_hap1\t0.5\n"
-        "r3\tT2_hap2\tG2_hap2\t0.5\n"
-    )
-    prefix = tmp_path / "genes"
-    run_script(
-        "count_rna_haplotypes.py",
-        "--assignments", assignments,
-        "--mode", "genes",
-        "--resolve-threshold", 0.9,
-        "--output-prefix", prefix,
-    )
-    groups = {row["Read_ID"]: row["Group"] for row in read_tsv(tmp_path / "genes.readgroups.tsv")}
-    assert groups == {"r1": "H1", "r2": "NonHS", "r3": "NonHS_complex"}
-    counts = {row["ID"]: row for row in read_tsv(tmp_path / "genes.counts.tsv")}
-    assert counts["G1"]["H1"] == "1"
-    assert counts["G1"]["NonHS"] == "1"
-    assert counts["G2"]["NonHS_complex"] == "1"
+TRANSCRIPTS = ["T1_hap1", "T1_hap2", "T1B_hap1", "T1B_hap2", "T2_hap1", "T2_hap2"]
+
+
+def write_rna_bam(path: Path, alignments: list[tuple[str, str, int, int]]) -> None:
+    """Write (read, transcript, AS, flag) records in the given, unsorted order."""
+    header = {"HD": {"VN": "1.6", "SO": "unsorted"},
+              "SQ": [{"SN": name, "LN": 1000} for name in TRANSCRIPTS]}
+    with pysam.AlignmentFile(path, "wb", header=header) as handle:
+        for read, transcript, score, flag in alignments:
+            record = pysam.AlignedSegment()
+            record.query_name = read
+            record.flag = flag
+            record.reference_id = TRANSCRIPTS.index(transcript)
+            record.reference_start = 0
+            record.mapping_quality = 60
+            record.cigar = ((0, 50),)
+            if not flag & 256:
+                record.query_sequence = "A" * 50
+                record.query_qualities = pysam.qualitystring_to_array("I" * 50)
+            record.set_tag("AS", score)
+            handle.write(record)
+
+
+def rna_tx2gene(tmp_path: Path) -> Path:
+    path = tmp_path / "tx2gene.tsv"
+    path.write_text("transcript_id\tgene_id\tgene_name\nT1\tG1\tG1\nT1B\tG1\tG1\nT2\tG2\tG2\n")
+    return path
+
+
+def test_rna_haplotypes_come_from_the_best_alignments(tmp_path: Path) -> None:
+    bam = tmp_path / "reads.bam"
+    write_rna_bam(bam, [
+        ("only_hap1", "T1_hap1", 100, 0),
+        ("both_haps", "T1_hap1", 100, 0), ("both_haps", "T1_hap2", 100, 256),
+        # A lower score on hap2 is sequence evidence for hap1.
+        ("snp", "T1_hap1", 100, 0), ("snp", "T1_hap2", 90, 256),
+        ("two_isoforms", "T1_hap1", 100, 0), ("two_isoforms", "T1B_hap1", 100, 256),
+        ("two_genes", "T1_hap1", 100, 0), ("two_genes", "T2_hap2", 100, 256),
+        ("antisense", "T1_hap2", 100, 16),
+        ("chimera", "T1_hap1", 100, 0), ("chimera", "T2_hap1", 100, 2048),
+    ])
+
+    def run(strand: str) -> dict[str, dict[str, str]]:
+        prefix = tmp_path / strand
+        run_script("count_rna_haplotypes.py", "--bam", bam, "--tx2gene", rna_tx2gene(tmp_path),
+                   "--strand", strand, "--output-prefix", prefix)
+        return {level: {row["Read_ID"]: row["Group"] for row in read_tsv(Path(f"{prefix}.{level}.readgroups.tsv"))}
+                for level in ("genes", "isoforms")}
+
+    groups = run("fw")
+    assert groups["genes"] == {
+        "only_hap1": "H1", "both_haps": "NonHS", "snp": "H1", "two_isoforms": "H1_multimapping",
+        "two_genes": "NonHS_complex", "chimera": "H1",
+    }
+    assert groups["isoforms"]["two_isoforms"] == "H1_multimapping_multigene"
+    qc = {row["metric"]: row["reads"] for row in read_tsv(tmp_path / "fw.genes.qc.tsv")}
+    assert qc["Discarded_orientation"] == "1"
+    counts = {row["ID"]: row for row in read_tsv(tmp_path / "fw.genes.counts.tsv")}
+    assert counts["G1"]["H1"] == "3" and counts["G1"]["NonHS"] == "1"
+    assert run("both")["genes"]["antisense"] == "H2"
 
 
 def test_rna_counting_rejects_a_read_split_into_two_blocks(tmp_path: Path) -> None:
     """Counting streams one read at a time, so a read must not reappear later."""
-    assignments = tmp_path / "assignments.tsv"
-    assignments.write_text(
-        "read_id\ttranscript_id\tgene_id\tprobability\n"
-        "r1\tT1_hap1\tG1_hap1\t0.5\n"
-        "r2\tT1_hap2\tG1_hap2\t1\n"
-        "r1\tT1_hap2\tG1_hap2\t0.5\n"
-    )
+    bam = tmp_path / "sorted.bam"
+    write_rna_bam(bam, [("r1", "T1_hap1", 100, 0), ("r2", "T1_hap2", 100, 0), ("r1", "T1_hap2", 100, 256)])
     with pytest.raises(subprocess.CalledProcessError):
-        run_script("count_rna_haplotypes.py", "--assignments", assignments, "--mode", "genes",
+        run_script("count_rna_haplotypes.py", "--bam", bam, "--tx2gene", rna_tx2gene(tmp_path),
                    "--output-prefix", tmp_path / "split")
+
+
+def test_oarfish_estimates_are_summed_over_haplotypes(tmp_path: Path) -> None:
+    quant = []
+    for sample, values in (("S1", (10.5, 4.5, 3, 0, 7, 1)), ("S2", (1, 1, 0, 0, 0, 0))):
+        path = tmp_path / f"{sample}.quant"
+        path.write_text("tname\tlen\tnum_reads\n" + "".join(
+            f"{name}\t1000\t{value}\n" for name, value in zip(TRANSCRIPTS, values)))
+        quant.append(path)
+    run_script("merge_oarfish_quant.py", "--quant", *quant, "--tx2gene", rna_tx2gene(tmp_path),
+               "--genes-output", tmp_path / "genes.tsv", "--transcripts-output", tmp_path / "tx.tsv")
+    genes = {(row["sample"], row["ID"]): float(row["num_reads"]) for row in read_tsv(tmp_path / "genes.tsv")}
+    transcripts = {(row["sample"], row["ID"]): float(row["num_reads"]) for row in read_tsv(tmp_path / "tx.tsv")}
+    assert transcripts[("S1", "T1")] == 15 and transcripts[("S1", "T1B")] == 3
+    assert genes == {("S1", "G1"): 18, ("S1", "G2"): 8, ("S2", "G1"): 2, ("S2", "G2"): 0}
 
 
 def test_mapping_priors(tmp_path: Path) -> None:
@@ -161,69 +207,6 @@ def test_balanced_ase_shards(tmp_path: Path) -> None:
     assert all(Path(output / row["file"]).exists() for row in manifest)
     shard_rows = read_tsv(output / manifest[0]["file"])
     assert {"group", "test", "groupA", "groupB"}.issubset(shard_rows[0])
-
-
-def test_read_locks_onto_the_first_assignment_above_the_threshold(tmp_path: Path) -> None:
-    assignments = tmp_path / "assignments.tsv"
-    assignments.write_text(
-        "read_id\ttranscript_id\tgene_id\tprobability\n"
-        "r1\tT1_hap1\tG1_hap1\t0.91\n"
-        "r1\tT2_hap2\tG2_hap2\t0.99\n"
-    )
-    prefix = tmp_path / "locked"
-    run_script(
-        "count_rna_haplotypes.py",
-        "--assignments", assignments,
-        "--mode", "genes",
-        "--resolve-threshold", 0.9,
-        "--output-prefix", prefix,
-    )
-    groups = read_tsv(tmp_path / "locked.readgroups.tsv")
-    assert groups == [{"Read_ID": "r1", "Group": "H1"}]
-    counts = read_tsv(tmp_path / "locked.counts.tsv")
-    assert counts[0]["ID"] == "G1"
-    assert counts[0]["H1"] == "1"
-
-
-def test_min_probability_recovers_a_dominant_isoform(tmp_path: Path) -> None:
-    """A trace probability on a sibling isoform must not discard the read.
-
-    r1 is one isoform read that cannot tell the haplotypes apart, so its
-    probability splits over T1_hap1/T1_hap2 and never reaches the resolve
-    threshold; the 0.05 left on T2 then makes it look multi-feature. r2 has no
-    isoform above the filter at all.
-    """
-    assignments = tmp_path / "assignments.tsv"
-    assignments.write_text(
-        "read_id\ttranscript_id\tgene_id\tprobability\n"
-        "r1\tT1_hap1\tG1_hap1\t0.45\n"
-        "r1\tT1_hap2\tG1_hap2\t0.45\n"
-        "r1\tT2_hap1\tG1_hap1\t0.05\n"
-        "r1\tT2_hap2\tG1_hap2\t0.05\n"
-        "r2\tT3_hap1\tG2_hap1\t0.05\n"
-        "r2\tT4_hap2\tG2_hap2\t0.05\n"
-    )
-
-    def run(mode: str, min_probability: float) -> dict[str, str]:
-        prefix = tmp_path / f"{mode}-{min_probability}"
-        run_script(
-            "count_rna_haplotypes.py",
-            "--assignments", assignments,
-            "--mode", mode,
-            "--resolve-threshold", 0.9,
-            "--min-probability", min_probability,
-            "--output-prefix", prefix,
-        )
-        return {row["Read_ID"]: row["Group"] for row in read_tsv(Path(f"{prefix}.readgroups.tsv"))}
-
-    assert run("isoforms", 0)["r1"] == "NonHS_multimapping_multigene"
-    assert run("isoforms", 0.1)["r1"] == "NonHS"
-    # Every assignment of r2 is below the filter, so it belongs to no feature.
-    assert run("isoforms", 0.1)["r2"] == "Unclassified"
-    counted = {row["ID"] for row in read_tsv(tmp_path / "isoforms-0.1.counts.tsv")}
-    assert counted == {"T1"}
-    # Gene level needs no filter here: both isoforms belong to the same gene.
-    assert run("genes", 0)["r1"] == "NonHS_multimapping"
 
 
 def test_reference_split_uses_required_haplotype_suffixes(tmp_path: Path) -> None:
@@ -415,7 +398,7 @@ def test_tiling_unweighted_is_unchanged(tmp_path: Path) -> None:
     run_script("tile_transcripts.py", "--transcriptome", fasta, "--read-length", "500",
                "--step", "250", "--output", plain)
     empty = tmp_path / "usage.tsv"
-    empty.write_text("ID\tH1\tH2\tNonHS\n")
+    empty.write_text("sample\tID\tnum_reads\n")
     with_flag = tmp_path / "flagged.fastq"
     run_script("tile_transcripts.py", "--transcriptome", fasta, "--read-length", "500",
                "--step", "250", "--isoform-usage", empty, "--max-replicates", "3",
@@ -424,10 +407,11 @@ def test_tiling_unweighted_is_unchanged(tmp_path: Path) -> None:
 
 
 def test_tiling_weights_by_isoform_usage(tmp_path: Path) -> None:
+    """Tiles are replicated by the Oarfish estimates summed over every sample."""
     fasta = tmp_path / "tx.fa"
     fasta.write_text(">TX1_hap1\n" + "ACGT" * 400 + "\n>TX2_hap1\n" + "ACGT" * 400 + "\n")
-    usage = tmp_path / "usage.tsv"
-    usage.write_text("sample\tID\tH1\tH2\tNonHS\nS1\tTX1\t90\t10\t0\nS1\tTX2\t1\t0\t0\n")
+    usage = tmp_path / "transcript_quant.tsv"
+    usage.write_text("sample\tID\tnum_reads\nS1\tTX1\t99.5\nS1\tTX2\t0.5\nS2\tTX2\t0.5\n")
     tx2gene = tmp_path / "tx2gene.tsv"
     tx2gene.write_text("transcript_id\tgene_id\tgene_name\nTX1\tG1\tG1\nTX2\tG1\tG1\n")
     output = tmp_path / "weighted.fastq"
@@ -440,6 +424,36 @@ def test_tiling_weights_by_isoform_usage(tmp_path: Path) -> None:
     minor = sum(1 for name in names if name.startswith("TX2_hap1"))
     assert dominant == 3 * minor
     assert report.read_text().startswith("expression")
+
+
+def test_ase_input_keeps_libraries_without_reads(tmp_path: Path) -> None:
+    """A library with no read for a gene measured zero and must stay in the fit."""
+    sheet = tmp_path / "samples.tsv"
+    sheet.write_text("sample\tcondition\tdna_id\trna\nS1\tA\tD1\tx.bam\nS2\tB\tD2\ty.bam\n")
+    counts = tmp_path / "counts.tsv"
+    counts.write_text("sample\tID\tH1\tH2\tNonHS\nS1\tG1\t5\t3\t2\nS1\tG2\t1\t1\t1\nS2\tG2\t4\t4\t4\n")
+    copy_number = tmp_path / "cn.tsv"
+    copy_number.write_text("sample\tID\tCN_H1\tCN_H2\nD1\tG1\t1\t1\nD2\tG1\t2\t1\nD1\tG2\t1\t1\nD2\tG2\t1\t1\n")
+    priors = tmp_path / "priors.tsv"
+    priors.write_text("ID\tH1_prior\tH2_prior\nG1\t0.8\t0.8\nG2\t0.5\t0.5\n")
+    output = tmp_path / "ase_input.tsv"
+    run_script("prepare_ase_input.py", "--rna-counts", counts, "--samplesheet", sheet,
+               "--copy-number", copy_number, "--priors", priors, "--output", output)
+    rows = {(row["sample"], row["ID"]): row for row in read_tsv(output)}
+    assert len(rows) == 4
+    filled = rows[("S2", "G1")]
+    assert (filled["H1_counts"], filled["H2_counts"], filled["NonHS_counts"]) == ("0", "0", "0")
+    assert (filled["CN_H1"], filled["CN_H2"], filled["group"]) == ("2.0", "1.0", "B")
+
+    # A combined table has copy number only on its rows: the missing library
+    # takes it from another library of the same DNA sample.
+    sheet.write_text("sample\tcondition\tdna_id\trna\nS1\tA\tD1\tx.bam\nS2\tA\tD1\ty.bam\n")
+    combined = tmp_path / "combined.tsv"
+    combined.write_text("sample\tID\tH1\tH2\tNonHS\tCN_H1\tCN_H2\nS1\tG1\t5\t3\t2\t3\t1\nS2\tG2\t4\t4\t4\t1\t1\n")
+    run_script("prepare_ase_input.py", "--counts", combined, "--samplesheet", sheet,
+               "--priors", priors, "--output", output)
+    rows = {(row["sample"], row["ID"]): row for row in read_tsv(output)}
+    assert (rows[("S2", "G1")]["CN_H1"], rows[("S2", "G1")]["H1_counts"]) == ("3.0", "0")
 
 
 def test_split_ase_input_multiple_contrasts(tmp_path: Path) -> None:

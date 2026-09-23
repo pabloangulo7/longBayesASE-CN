@@ -3,13 +3,16 @@
 
 The same code serves the gene and the isoform tables; only the input file
 names differ, and both come out with the columns sample, ID, H1, H2, NonHS.
+Each column adds the reads confined to one feature (for example H1 and
+H1_multimapping); multigene and complex reads stay out of the model.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import re
+
+from common import files_by_sample
 
 
 def total(row: dict[str, str], name: str) -> int:
@@ -22,17 +25,7 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
-    pattern = re.compile(r"^(?P<sample>.+)\.(?:genes|isoforms)\.counts\.tsv$")
-    by_sample: dict[str, str] = {}
-    for path in args.counts:
-        name = path.rsplit("/", 1)[-1]
-        match = pattern.match(name)
-        if not match:
-            raise ValueError(f"cannot identify sample from RNA count filename: {name}")
-        sample = match.group("sample")
-        if sample in by_sample:
-            raise ValueError(f"two count files for sample {sample}: {by_sample[sample]} and {path}")
-        by_sample[sample] = path
+    by_sample = files_by_sample(args.counts, r"\.(?:genes|isoforms)\.counts\.tsv")
 
     with open(args.output, "w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["sample", "ID", "H1", "H2", "NonHS"], delimiter="\t", lineterminator="\n")

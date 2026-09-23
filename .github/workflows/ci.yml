@@ -83,6 +83,8 @@ jobs:
           test -s full-test-results/dna/gene_copy_numbers.tsv
           test -s full-test-results/rna/gene_counts.tsv
           test -s full-test-results/rna/isoform_counts.tsv
+          test -s full-test-results/rna/gene_quant.tsv
+          test -s full-test-results/rna/transcript_quant.tsv
           test -s full-test-results/priors/mapping_priors.tsv
           test -s full-test-results/priors/mapping_priors.isoforms.tsv
 

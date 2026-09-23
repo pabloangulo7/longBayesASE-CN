@@ -55,6 +55,8 @@ gam.mles.data = function(x){
   repeat{
     ans = (log(a0)-digamma(a0)-s)
     a1 = a0-ans/(1.0/a0-trigamma(a0))
+    # Identical values give no spread to fit and the update diverges.
+    if(!is.finite(a1)){a1 = a0; break}
     if(abs(ans) <= 1.0e-7 | l >= 30){break}
     a0 = a1
     l = l+1
@@ -81,13 +83,14 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     K <- nrow(gene_data)
     n_groups <- length(group_levels)
     xenv <- as.numeric(gene_data$group)
-    smallestGroupSize <- min(table(xenv))
+    # tabulate counts a group with no library as 0, which table() would omit.
+    smallestGroupSize <- min(tabulate(xenv, nbins = n_groups))
     xs <- as.integer(gene_data$H1_counts)
     ys <- as.integer(gene_data$H2_counts)
     zs <- as.integer(gene_data$NonHS_counts)
     cnv1 <- as.numeric(gene_data$CN_H1)
     cnv2 <- as.numeric(gene_data$CN_H2)
-    r <- gene_data[, .(H1_prior=mean(H1_prior), H2_prior=mean(H2_prior)), by=group][, .(H1_prior, H2_prior)] |> as.matrix()
+    r <- t(sapply(seq_len(n_groups), function(i) c(mean(gene_data$H1_prior[xenv == i]), mean(gene_data$H2_prior[xenv == i]))))
     for (grp_idx in 1:n_groups) {
       grp_mask <- which(xenv == grp_idx)
       current_xs <- xs[grp_mask]
@@ -97,9 +100,7 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       if (sum(current_xs) == 0) {xs[grp_mask[which.max(zs[grp_mask])]] <- 1}
       if (sum(current_ys) == 0) {ys[grp_mask[which.max(zs[grp_mask])]] <- 1}
     }
-    hyper_beta <- prior_empBayes_forbeta(xs, ys, zs, cnv1, cnv2)
     datastan <- list(K = K, n_environment = n_groups, xenv = xenv, xs = xs, ys = ys, zs = zs, r = r, cnv1 = cnv1, cnv2 = cnv2,
-      a_beta = hyper_beta$a_beta, a_b_beta = hyper_beta$a_b_beta, b_b_beta = hyper_beta$b_b_beta,
       a_overdispersion = 2.01, b_overdispersion = 0.05)
     starting_values <- function() {list(overdispersion = 0.01, bbeta = (datastan$xs + datastan$ys + datastan$zs) / (cnv1 + cnv2), alpha = rep(1.0, datastan$n_environment))}
     total_xs_vec <- sapply(1:n_groups, function(i) sum(datastan$xs[datastan$xenv == i]))
@@ -110,9 +111,13 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     mean_zs_vec <- sapply(1:n_groups, function(i) mean(datastan$zs[datastan$xenv == i]))
     total_counts_sample <- datastan$xs + datastan$ys + datastan$zs
     cond1 <- sum(total_counts_sample >= 10, na.rm = TRUE) >= smallestGroupSize
-    cond2 <- sum((r - r^2) != 0) > 0
+    cond2 <- sum((r - r^2) != 0, na.rm = TRUE) > 0
     cond3 <- smallestGroupSize >= 3
-    if (cond1 && cond2 && cond3) {
+    # A group where no library expresses the gene gives nothing to compare.
+    cond4 <- all(sapply(seq_len(n_groups), function(i) any(total_counts_sample[xenv == i] >= 10)))
+    if (cond1 && cond2 && cond3 && cond4) {
+      hyper_beta <- prior_empBayes_forbeta(xs, ys, zs, cnv1, cnv2)
+      datastan <- c(datastan, list(a_beta = hyper_beta$a_beta, a_b_beta = hyper_beta$a_b_beta, b_b_beta = hyper_beta$b_b_beta))
       max_try <- 15
       n_try <- 0
       repeat{
@@ -167,7 +172,7 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     )
     return(gene_res)
   }, error = function(e) {
-    gene_res <- data.table(test=NA_character_, groupA=NA_character_, groupB=NA_character_,
+    gene_res <- data.table(test=paste(group_levels, collapse = "_VS_"), groupA=group_levels[1], groupB=group_levels[2],
       groupA_priorH1=NA_real_, groupA_priorH2=NA_real_, groupA_totalH1=NA_real_, groupA_totalH2=NA_real_, groupA_totalNonHS=NA_real_, groupA_meanH1=NA_real_, groupA_meanH2=NA_real_, groupA_meanNonHS=NA_real_,
       groupB_priorH1=NA_real_, groupB_priorH2=NA_real_, groupB_totalH1=NA_real_, groupB_totalH2=NA_real_, groupB_totalNonHS=NA_real_, groupB_meanH1=NA_real_, groupB_meanH2=NA_real_, groupB_meanNonHS=NA_real_,
       groupA_alpha_mean=NA_real_, groupA_theta_mean=NA_real_, groupA_theta_q025=NA_real_, groupA_theta_q975=NA_real_,

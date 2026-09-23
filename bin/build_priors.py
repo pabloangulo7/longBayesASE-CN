@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Estimate per-gene haplotype assignment probabilities from simulations."""
+"""Estimate the mapping probabilities r1 and r2 of every feature from simulations.
+
+r1 is the fraction of the reads simulated from H1 that are classified H1, and r2
+the same for H2. The fraction classified on the wrong haplotype is reported as
+misassignment; the model has no term for it, so it should stay near zero.
+"""
 
 from __future__ import annotations
 

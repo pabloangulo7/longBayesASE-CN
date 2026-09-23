@@ -73,8 +73,25 @@ def main() -> None:
     priors = load_priors(args.priors)
     copy_number = load_copy_number(args.copy_number) if args.copy_number else {}
     tx2gene = load_tx2gene(args.tx2gene)
+
+    def model_row(sample: str, gene: str, counts: tuple[int, int, int],
+                  cn: tuple[float, float]) -> dict[str, object]:
+        meta = samples[sample]
+        return {
+            "sample": sample, "dna_id": meta["dna_id"], "group": meta["condition"], "ID": gene,
+            "H1_counts": counts[0], "H2_counts": counts[1], "NonHS_counts": counts[2],
+            "CN_H1": cn[0], "CN_H2": cn[1], "H1_prior": priors[gene][0], "H2_prior": priors[gene][1],
+        }
+
+    def table_copy_number(sample: str, gene: str) -> tuple[float, float] | None:
+        # Copy number is always keyed by gene; isoform-level counts reach it
+        # through tx2gene.
+        return copy_number.get((samples[sample]["dna_id"], tx2gene.get(gene, gene)))
+
     rows_out = []
     missing_cn, missing_prior = set(), set()
+    libraries: set[str] = set()
+    kept_cn: dict[tuple[str, str], tuple[float, float]] = {}
     with open(args.counts or args.rna_counts) as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         fields = set(reader.fieldnames or [])
@@ -86,29 +103,40 @@ def main() -> None:
             sample, gene = row["sample"], row["ID"]
             if sample not in samples:
                 raise ValueError(f"RNA counts have no samplesheet row: {sample}")
-            meta = samples[sample]
-            # Copy number is always keyed by gene; isoform-level counts reach it
-            # through tx2gene.
+            libraries.add(sample)
             cn = ((float(row["CN_H1"]), float(row["CN_H2"])) if args.counts
-                  else copy_number.get((meta["dna_id"], tx2gene.get(gene, gene))))
-            prior = priors.get(gene)
+                  else table_copy_number(sample, gene))
             if cn is None:
                 missing_cn.add(gene)
                 continue
-            if prior is None:
+            if gene not in priors:
                 missing_prior.add(gene)
                 continue
-            rows_out.append({
-                "sample": sample, "dna_id": meta["dna_id"], "group": meta["condition"],
-                "ID": gene,
-                "H1_counts": number(row, "H1"), "H2_counts": number(row, "H2"),
-                "NonHS_counts": number(row, "NonHS"),
-                "CN_H1": cn[0], "CN_H2": cn[1],
-                "H1_prior": prior[0], "H2_prior": prior[1],
-            })
+            kept_cn[(sample, gene)] = cn
+            counts = number(row, "H1"), number(row, "H2"), number(row, "NonHS")
+            rows_out.append(model_row(sample, gene, counts, cn))
+
+    # A library with no read for a gene has no row in the count table, but it
+    # did measure zero; without the row the model would drop that library. A
+    # combined table carries copy number only on its rows, so there it comes
+    # from another library of the same DNA sample.
+    cn_by_dna = {(samples[sample]["dna_id"], gene): cn for (sample, gene), cn in kept_cn.items()}
+    filled = unfillable = 0
+    for gene in sorted({gene for _sample, gene in kept_cn}):
+        for sample in sorted(libraries):
+            if (sample, gene) in kept_cn:
+                continue
+            cn = (cn_by_dna.get((samples[sample]["dna_id"], gene)) if args.counts
+                  else table_copy_number(sample, gene))
+            if cn is None:
+                unfillable += 1
+                continue
+            rows_out.append(model_row(sample, gene, (0, 0, 0), cn))
+            filled += 1
     print(
         f"[prepare_ase_input] dropped {len(missing_cn | missing_prior)} genes: "
-        f"{len(missing_cn)} missing copy number, {len(missing_prior)} missing prior",
+        f"{len(missing_cn)} missing copy number, {len(missing_prior)} missing prior; "
+        f"added {filled} zero-count rows, {unfillable} left out for lack of copy number",
         file=sys.stderr,
     )
     if not rows_out:

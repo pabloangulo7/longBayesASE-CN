@@ -17,9 +17,7 @@ import gzip
 import re
 from collections import defaultdict
 
-from common import fasta_records, load_tx2gene, open_text
-
-USAGE_COLUMNS = ("H1", "H2", "NonHS")
+from common import HAP_SUFFIX_RE, fasta_records, load_tx2gene, open_text
 
 
 def tile_starts(length: int, read_length: int, step: int) -> list[int]:
@@ -33,7 +31,7 @@ def tile_starts(length: int, read_length: int, step: int) -> list[int]:
 
 
 def load_usage(path: str | None) -> dict[str, float]:
-    """Sum the long per-sample isoform table into one weight per transcript.
+    """Sum the Oarfish transcript table (ID, num_reads) over samples.
 
     Summing here is deliberate: the prior has to be identical in every
     condition, so it can never be built from one condition's expression.
@@ -46,13 +44,10 @@ def load_usage(path: str | None) -> dict[str, float]:
         fields = set(reader.fieldnames or [])
         if not fields:
             return weights
-        if "ID" not in fields:
-            raise ValueError("isoform usage table requires an ID column")
-        columns = [name for name in USAGE_COLUMNS if name in fields]
-        if not columns:
-            raise ValueError(f"isoform usage table requires at least one of: {', '.join(USAGE_COLUMNS)}")
+        if not {"ID", "num_reads"}.issubset(fields):
+            raise ValueError("isoform usage table requires columns: ID, num_reads")
         for row in reader:
-            weights[row["ID"]] += sum(float(row.get(name) or 0) for name in columns)
+            weights[row["ID"]] += float(row["num_reads"])
     return weights
 
 
@@ -65,16 +60,15 @@ def replicate_counts(
     """Replicates per transcript, normalised against its own gene's maximum."""
     if not weights or max_replicates <= 1:
         return {transcript: 1 for transcript in transcripts}
-    by_gene: dict[str, float] = defaultdict(float)
-    for transcript in transcripts:
-        base = re.sub(r"_hap[12]$", "", transcript)
-        by_gene[tx2gene.get(base, base)] = max(by_gene[tx2gene.get(base, base)], weights.get(base, 0.0))
+    bases = {transcript: HAP_SUFFIX_RE.sub("", transcript) for transcript in transcripts}
+    top: dict[str, float] = defaultdict(float)
+    for base in bases.values():
+        gene = tx2gene.get(base, base)
+        top[gene] = max(top[gene], weights.get(base, 0.0))
     counts = {}
-    for transcript in transcripts:
-        base = re.sub(r"_hap[12]$", "", transcript)
-        top = by_gene[tx2gene.get(base, base)]
-        weight = weights.get(base, 0.0)
-        share = weight / top if top > 0 else 0.0
+    for transcript, base in bases.items():
+        gene_top = top[tx2gene.get(base, base)]
+        share = weights.get(base, 0.0) / gene_top if gene_top > 0 else 0.0
         counts[transcript] = min(max(1, round(max_replicates * share)), max_replicates)
     return counts
 
@@ -84,7 +78,7 @@ def main() -> None:
     parser.add_argument("--transcriptome", required=True)
     parser.add_argument("--read-length", type=int, default=1000)
     parser.add_argument("--step", type=int, default=100)
-    parser.add_argument("--isoform-usage", help="long table with columns ID, H1, H2, NonHS")
+    parser.add_argument("--isoform-usage", help="Oarfish transcript table with columns ID and num_reads")
     parser.add_argument("--tx2gene", help="transcript_id/gene_id table used to group isoforms")
     parser.add_argument("--max-replicates", type=int, default=3)
     parser.add_argument("--output", required=True)

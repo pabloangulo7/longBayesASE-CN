@@ -58,6 +58,39 @@ def feature_parts(feature_id: str) -> Tuple[str, str | None]:
     return base, hap
 
 
+def split_haplotype(name: str) -> Tuple[str, int]:
+    """Return (transcript, 1 or 2) from a diploid transcriptome name such as TX1_hap2."""
+    match = HAP_SUFFIX_RE.search(name)
+    if not match:
+        raise ValueError(f"transcript lacks _hap1/_hap2 suffix: {name}")
+    return name[: match.start()], int(match.group(1))
+
+
+def gene_of(tx2gene: Dict[str, str], transcript: str) -> str:
+    gene = tx2gene.get(transcript)
+    if gene is None:
+        raise ValueError(f"no tx2gene entry for transcript: {transcript}")
+    return gene
+
+
+def files_by_sample(paths: Iterable[str], suffix: str) -> Dict[str, str]:
+    """Map each sample to its per-library file, named <sample><suffix>.
+
+    suffix is a regular expression; two files for one sample are an error.
+    """
+    pattern = re.compile(rf"^(?P<sample>.+){suffix}$")
+    by_sample: Dict[str, str] = {}
+    for path in paths:
+        match = pattern.match(Path(path).name)
+        if not match:
+            raise ValueError(f"cannot identify the sample from the file name: {path}")
+        sample = match.group("sample")
+        if sample in by_sample:
+            raise ValueError(f"two files for sample {sample}: {by_sample[sample]} and {path}")
+        by_sample[sample] = path
+    return by_sample
+
+
 def fasta_records(path: str | Path) -> Iterator[Tuple[str, str, str]]:
     """Yield FASTA identifier, complete header, and sequence."""
     ident = ""
