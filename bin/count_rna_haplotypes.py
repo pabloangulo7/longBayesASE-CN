@@ -7,7 +7,7 @@ explain it equally well it is NonHS. The decision rests on the sequence alone,
 as in BayesASE, so the simulated reads behind the priors and the real reads are
 classified by the same rule whatever the composition of the library.
 
-Gene and isoform level are counted in one pass over the BAM. The BAM must keep
+Gene and transcript level are counted in one pass over the BAM. The BAM must keep
 every alignment of a read together, as minimap2 writes it; memory then does not
 grow with library depth, and a read whose alignments come back in a later block
 stops the run instead of being counted twice.
@@ -36,7 +36,7 @@ COMPLEX_CATEGORIES = {
     "H1_multimapping_multigene", "H2_multimapping_multigene",
     "NonHS_multimapping_multigene", "NonHS_complex", "NonHS_multimapping_complex",
 }
-LEVELS = ("genes", "isoforms")
+LEVELS = ("gene", "transcript")
 
 
 def read_key(read_id: str) -> int:
@@ -69,7 +69,7 @@ class LevelCounter:
         self.counts: dict[str, Counter] = defaultdict(Counter)
         self.complex_reads: dict[str, list[str]] = defaultdict(list)
         self.qc: Counter = Counter()
-        self.groups = open(prefix + ".readgroups.tsv", "w")
+        self.groups = open(prefix + "_readgroups.tsv", "w")
         self.groups.write("Read_ID\tGroup\n")
 
     def add(self, read_id: str, h1: list[str], h2: list[str]) -> None:
@@ -83,16 +83,16 @@ class LevelCounter:
 
     def write(self, discarded: Counter) -> None:
         self.groups.close()
-        with open(self.prefix + ".counts.tsv", "w") as out:
+        with open(self.prefix + "_HS_counts.tsv", "w") as out:
             out.write("ID\t" + "\t".join(CATEGORIES) + "\n")
             # Sorted so that two runs over the same input give the same file.
             for feature, counts in sorted(self.counts.items()):
                 out.write(feature + "\t" + "\t".join(str(counts[cat]) for cat in CATEGORIES) + "\n")
-        with open(self.prefix + ".complex_reads.tsv", "w") as out:
+        with open(self.prefix + "_complex_reads.tsv", "w") as out:
             out.write("ID\tReads\n")
             for feature, reads in sorted(self.complex_reads.items()):
                 out.write(f"{feature}\t{','.join(reads)}\n")
-        with open(self.prefix + ".qc.tsv", "w") as out:
+        with open(self.prefix + "_qc.tsv", "w") as out:
             out.write("metric\treads\n")
             for metric, value in sorted((self.qc + discarded).items()):
                 out.write(f"{metric}\t{value}\n")
@@ -123,8 +123,8 @@ def main() -> None:
             return
         h1 = [transcript for transcript, hap in best if hap == 1]
         h2 = [transcript for transcript, hap in best if hap == 2]
-        counters["isoforms"].add(read_id, h1, h2)
-        counters["genes"].add(read_id, [gene_of(tx2gene, t) for t in h1], [gene_of(tx2gene, t) for t in h2])
+        counters["transcript"].add(read_id, h1, h2)
+        counters["gene"].add(read_id, [gene_of(tx2gene, t) for t in h1], [gene_of(tx2gene, t) for t in h2])
 
     current = None
     best: list[tuple[str, int]] = []

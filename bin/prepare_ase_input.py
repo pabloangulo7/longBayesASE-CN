@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Join unified RNA counts, copy number, priors and sample metadata."""
+"""Join haplotype-specific counts, copy number, priors and sample metadata."""
 
 from __future__ import annotations
 
@@ -58,16 +58,16 @@ def load_copy_number(path: str) -> dict[tuple[str, str], tuple[float, float]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--rna-counts")
+    group.add_argument("--hs-counts")
     group.add_argument("--counts")
     parser.add_argument("--samplesheet", required=True)
     parser.add_argument("--copy-number")
     parser.add_argument("--priors", required=True)
-    parser.add_argument("--tx2gene", help="used when the counts are isoform-level")
+    parser.add_argument("--tx2gene", help="used when the counts are transcript-level")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    if args.rna_counts and not args.copy_number:
-        parser.error("--rna-counts requires --copy-number; use --counts for a combined table")
+    if args.hs_counts and not args.copy_number:
+        parser.error("--hs-counts requires --copy-number; use --counts for a combined table")
 
     samples = load_samples(args.samplesheet)
     priors = load_priors(args.priors)
@@ -84,7 +84,7 @@ def main() -> None:
         }
 
     def table_copy_number(sample: str, gene: str) -> tuple[float, float] | None:
-        # Copy number is always keyed by gene; isoform-level counts reach it
+        # Copy number is always keyed by gene; transcript-level counts reach it
         # through tx2gene.
         return copy_number.get((samples[sample]["dna_id"], tx2gene.get(gene, gene)))
 
@@ -92,17 +92,17 @@ def main() -> None:
     missing_cn, missing_prior = set(), set()
     libraries: set[str] = set()
     kept_cn: dict[tuple[str, str], tuple[float, float]] = {}
-    with open(args.counts or args.rna_counts) as handle:
+    with open(args.counts or args.hs_counts) as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         fields = set(reader.fieldnames or [])
         if not {"sample", "ID", "H1", "H2", "NonHS"}.issubset(fields):
-            raise ValueError("RNA counts require columns: sample, ID, H1, H2, NonHS")
+            raise ValueError("HS counts require columns: sample, ID, H1, H2, NonHS")
         if args.counts and not {"CN_H1", "CN_H2"}.issubset(fields):
             raise ValueError("combined counts also require columns: CN_H1, CN_H2")
         for row in reader:
             sample, gene = row["sample"], row["ID"]
             if sample not in samples:
-                raise ValueError(f"RNA counts have no samplesheet row: {sample}")
+                raise ValueError(f"HS counts have no samplesheet row: {sample}")
             libraries.add(sample)
             cn = ((float(row["CN_H1"]), float(row["CN_H2"])) if args.counts
                   else table_copy_number(sample, gene))

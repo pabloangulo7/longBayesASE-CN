@@ -70,20 +70,20 @@ def test_rna_haplotypes_come_from_the_best_alignments(tmp_path: Path) -> None:
         prefix = tmp_path / strand
         run_script("count_rna_haplotypes.py", "--bam", bam, "--tx2gene", rna_tx2gene(tmp_path),
                    "--strand", strand, "--output-prefix", prefix)
-        return {level: {row["Read_ID"]: row["Group"] for row in read_tsv(Path(f"{prefix}.{level}.readgroups.tsv"))}
-                for level in ("genes", "isoforms")}
+        return {level: {row["Read_ID"]: row["Group"] for row in read_tsv(Path(f"{prefix}.{level}_readgroups.tsv"))}
+                for level in ("gene", "transcript")}
 
     groups = run("fw")
-    assert groups["genes"] == {
+    assert groups["gene"] == {
         "only_hap1": "H1", "both_haps": "NonHS", "snp": "H1", "two_isoforms": "H1_multimapping",
         "two_genes": "NonHS_complex", "chimera": "H1",
     }
-    assert groups["isoforms"]["two_isoforms"] == "H1_multimapping_multigene"
-    qc = {row["metric"]: row["reads"] for row in read_tsv(tmp_path / "fw.genes.qc.tsv")}
+    assert groups["transcript"]["two_isoforms"] == "H1_multimapping_multigene"
+    qc = {row["metric"]: row["reads"] for row in read_tsv(tmp_path / "fw.gene_qc.tsv")}
     assert qc["Discarded_orientation"] == "1"
-    counts = {row["ID"]: row for row in read_tsv(tmp_path / "fw.genes.counts.tsv")}
+    counts = {row["ID"]: row for row in read_tsv(tmp_path / "fw.gene_HS_counts.tsv")}
     assert counts["G1"]["H1"] == "3" and counts["G1"]["NonHS"] == "1"
-    assert run("both")["genes"]["antisense"] == "H2"
+    assert run("both")["gene"]["antisense"] == "H2"
 
 
 def test_rna_counting_rejects_a_read_split_into_two_blocks(tmp_path: Path) -> None:
@@ -269,14 +269,14 @@ def test_samplesheet_accepts_multiple_technical_read_files(tmp_path: Path) -> No
     assert row["dna"].split(";") == [str(dna1.resolve()), str(dna2.resolve())]
 
 
-def test_unified_rna_counts(tmp_path: Path) -> None:
-    counts = tmp_path / "S1.genes.counts.tsv"
+def test_merged_hs_counts(tmp_path: Path) -> None:
+    counts = tmp_path / "S1.gene_HS_counts.tsv"
     counts.write_text(
         "ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\n"
         "G1\t10\t2\t8\t1\t4\t3\n"
     )
-    output = tmp_path / "gene_counts.tsv"
-    run_script("merge_rna_counts.py", "--counts", counts, "--output", output)
+    output = tmp_path / "gene_HS_counts.tsv"
+    run_script("merge_hs_counts.py", "--counts", counts, "--output", output)
     assert read_tsv(output) == [{"sample": "S1", "ID": "G1", "H1": "12", "H2": "9", "NonHS": "7"}]
 
 
@@ -401,12 +401,12 @@ def test_tiling_unweighted_is_unchanged(tmp_path: Path) -> None:
     empty.write_text("sample\tID\tnum_reads\n")
     with_flag = tmp_path / "flagged.fastq"
     run_script("tile_transcripts.py", "--transcriptome", fasta, "--read-length", "500",
-               "--step", "250", "--isoform-usage", empty, "--max-replicates", "3",
+               "--step", "250", "--transcript-quant", empty, "--max-replicates", "3",
                "--output", with_flag)
     assert plain.read_text() == with_flag.read_text()
 
 
-def test_tiling_weights_by_isoform_usage(tmp_path: Path) -> None:
+def test_tiling_weights_by_transcript_quant(tmp_path: Path) -> None:
     """Tiles are replicated by the Oarfish estimates summed over every sample."""
     fasta = tmp_path / "tx.fa"
     fasta.write_text(">TX1_hap1\n" + "ACGT" * 400 + "\n>TX2_hap1\n" + "ACGT" * 400 + "\n")
@@ -417,7 +417,7 @@ def test_tiling_weights_by_isoform_usage(tmp_path: Path) -> None:
     output = tmp_path / "weighted.fastq"
     report = tmp_path / "weighting.txt"
     run_script("tile_transcripts.py", "--transcriptome", fasta, "--read-length", "500",
-               "--step", "250", "--isoform-usage", usage, "--tx2gene", tx2gene,
+               "--step", "250", "--transcript-quant", usage, "--tx2gene", tx2gene,
                "--max-replicates", "3", "--weighting-report", report, "--output", output)
     names = [line[1:].strip() for line in output.read_text().splitlines() if line.startswith("@")]
     dominant = sum(1 for name in names if name.startswith("TX1_hap1"))
@@ -437,7 +437,7 @@ def test_ase_input_keeps_libraries_without_reads(tmp_path: Path) -> None:
     priors = tmp_path / "priors.tsv"
     priors.write_text("ID\tH1_prior\tH2_prior\nG1\t0.8\t0.8\nG2\t0.5\t0.5\n")
     output = tmp_path / "ase_input.tsv"
-    run_script("prepare_ase_input.py", "--rna-counts", counts, "--samplesheet", sheet,
+    run_script("prepare_ase_input.py", "--hs-counts", counts, "--samplesheet", sheet,
                "--copy-number", copy_number, "--priors", priors, "--output", output)
     rows = {(row["sample"], row["ID"]): row for row in read_tsv(output)}
     assert len(rows) == 4

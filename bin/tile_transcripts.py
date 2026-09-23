@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Create exhaustive deterministic FASTQ tiles from every transcript.
 
-Without --isoform-usage every transcript is tiled once, so the per-gene
-assignment probability is an average over isoforms weighted by their length.
-With --isoform-usage each tile is emitted k times, with k proportional to how
+Without --transcript-quant every transcript is tiled once, so the per-gene
+mapping probability is an average over isoforms weighted by their length.
+With --transcript-quant each tile is emitted k times, with k proportional to how
 much that isoform is used relative to the dominant isoform of its own gene, so
 the average is weighted by expression instead. Only within-gene ratios matter,
 because the priors are estimated per gene.
@@ -45,7 +45,7 @@ def load_usage(path: str | None) -> dict[str, float]:
         if not fields:
             return weights
         if not {"ID", "num_reads"}.issubset(fields):
-            raise ValueError("isoform usage table requires columns: ID, num_reads")
+            raise ValueError("transcript quantification requires columns: ID, num_reads")
         for row in reader:
             weights[row["ID"]] += float(row["num_reads"])
     return weights
@@ -78,7 +78,7 @@ def main() -> None:
     parser.add_argument("--transcriptome", required=True)
     parser.add_argument("--read-length", type=int, default=1000)
     parser.add_argument("--step", type=int, default=100)
-    parser.add_argument("--isoform-usage", help="Oarfish transcript table with columns ID and num_reads")
+    parser.add_argument("--transcript-quant", help="Oarfish transcript table with columns ID and num_reads")
     parser.add_argument("--tx2gene", help="transcript_id/gene_id table used to group isoforms")
     parser.add_argument("--max-replicates", type=int, default=3)
     parser.add_argument("--output", required=True)
@@ -89,7 +89,7 @@ def main() -> None:
     if args.max_replicates < 1:
         parser.error("--max-replicates must be at least 1")
 
-    weights = load_usage(args.isoform_usage)
+    weights = load_usage(args.transcript_quant)
     tx2gene = load_tx2gene(args.tx2gene)
     # A first pass reads only the headers, so the sequences are never all in memory.
     with open_text(args.transcriptome) as handle:

@@ -3,7 +3,7 @@
 include { VALIDATE_SAMPLESHEET; NORMALIZE_READS as NORMALIZE_DNA_READS; NORMALIZE_READS as NORMALIZE_RNA_READS; PREPARE_DNA_BAM; PREPARE_RNA_BAM } from './modules/local/inputs'
 include { PREPARE_REFERENCE; SPLIT_DIPLOID_GFF; LIFTOFF_ANNOTATE; BUILD_ANNOTATION_BUNDLE; BUILD_FEATURE_MAP } from './modules/local/annotation'
 include { DNA_ALIGN; DNA_MAX_SCORE; DNA_FEATURE_ASSIGN; DNA_SPLIT; DNA_COVERAGE; COMPUTE_COPY_NUMBER; COPY_NUMBER_FROM_PLOIDY } from './modules/local/dna'
-include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_RNA_COUNTS; MERGE_RNA_COUNTS as MERGE_ISOFORM_COUNTS; MERGE_OARFISH_QUANT } from './modules/local/rna'
+include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_HS_COUNTS as MERGE_GENE_HS_COUNTS; MERGE_HS_COUNTS as MERGE_TRANSCRIPT_HS_COUNTS; MERGE_OARFISH_QUANT } from './modules/local/rna'
 include { RNA_ALIGN as SIM_RNA_ALIGN; RNA_HAPLOTYPE_COUNT as SIM_RNA_HAPLOTYPE_COUNT } from './modules/local/rna'
 include { TILE_TRANSCRIPTS; BUILD_MAPPING_PRIORS } from './modules/local/simulation'
 include { PREPARE_ASE_INPUT; PREPARE_COMBINED_ASE_INPUT; COMPILE_ASE_MODEL; SPLIT_ASE_INPUT; RUN_ASE_SHARD; MERGE_ASE_RESULTS } from './modules/local/ase'
@@ -30,19 +30,19 @@ def optionalFile(value, fallback) {
 
 def emptyTx2gene() { optionalFile(null, "${projectDir}/assets/empty_tx2gene.tsv") }
 
-// Absent --isoform_usage resolves to a header-only table, so the tiler falls
-// back to one tile per transcript and reproduces the unweighted priors exactly.
-// At isoform level the weighting scales a transcript's numerator and denominator
-// by the same factor and cancels, so it is never applied there.
-def isoformUsage() {
-    if (params.level == 'isoform' && params.isoform_usage) {
-        log.warn 'Ignoring --isoform_usage: isoform-level priors do not average over isoforms, so the weighting cancels out'
-    }
-    optionalFile(params.level == 'isoform' ? null : params.isoform_usage,
-                 "${projectDir}/assets/empty_isoform_usage.tsv")
-}
+def transcriptLevel() { params.level == 'transcript' }
 
-def isoformLevel() { params.level == 'isoform' }
+// Absent --transcript_quant resolves to a header-only table, so the tiler falls
+// back to one tile per transcript and reproduces the unweighted priors exactly.
+// At transcript level the weighting scales a transcript's numerator and
+// denominator by the same factor and cancels, so it is never applied there.
+def transcriptQuant() {
+    if (transcriptLevel() && params.transcript_quant) {
+        log.warn 'Ignoring --transcript_quant: transcript-level priors do not average over isoforms, so the weighting cancels out'
+    }
+    optionalFile(transcriptLevel() ? null : params.transcript_quant,
+                 "${projectDir}/assets/empty_transcript_quant.tsv")
+}
 
 // Pick one haplotype's annotation out of the Liftoff channel.
 def haplotypeAnnotation(channel, wanted) {
@@ -173,17 +173,17 @@ workflow RNA_WF {
     // alignments; expression for differential expression and isoform usage
     // comes from Oarfish.
     RNA_HAPLOTYPE_COUNT(bam, tx2gene, params.rna_strand)
-    MERGE_RNA_COUNTS(RNA_HAPLOTYPE_COUNT.out.gene_counts.map { _meta, path -> path }.collect(),
-                     'gene_counts.tsv')
-    MERGE_ISOFORM_COUNTS(RNA_HAPLOTYPE_COUNT.out.isoform_counts.map { _meta, path -> path }.collect(),
-                         'isoform_counts.tsv')
+    MERGE_GENE_HS_COUNTS(RNA_HAPLOTYPE_COUNT.out.gene_hs_counts.map { _meta, path -> path }.collect(),
+                         'gene_HS_counts.tsv')
+    MERGE_TRANSCRIPT_HS_COUNTS(RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts.map { _meta, path -> path }.collect(),
+                               'transcript_HS_counts.tsv')
     OARFISH_QUANT(bam, params.oarfish_score, params.rna_strand, params.oarfish_bootstraps)
     MERGE_OARFISH_QUANT(OARFISH_QUANT.out.quant.map { _meta, path -> path }.collect(), tx2gene)
 
     emit:
-    counts           = MERGE_RNA_COUNTS.out.counts
-    isoform_counts   = MERGE_ISOFORM_COUNTS.out.counts
-    transcript_quant = MERGE_OARFISH_QUANT.out.transcripts
+    gene_hs_counts       = MERGE_GENE_HS_COUNTS.out.counts
+    transcript_hs_counts = MERGE_TRANSCRIPT_HS_COUNTS.out.counts
+    transcript_quant     = MERGE_OARFISH_QUANT.out.transcripts
 }
 
 
@@ -193,28 +193,28 @@ workflow PRIORS_WF {
     tx2gene
     hap1_tx
     hap2_tx
-    isoform_usage
+    transcript_quant
 
     main:
     def tiled = hap1_tx
         .map { fasta -> tuple([sample: 'SIM_HAP1'], 'hap1', fasta) }
         .mix(hap2_tx.map { fasta -> tuple([sample: 'SIM_HAP2'], 'hap2', fasta) })
-    TILE_TRANSCRIPTS(tiled, isoform_usage, tx2gene, params.tiling_read_length,
+    TILE_TRANSCRIPTS(tiled, transcript_quant, tx2gene, params.tiling_read_length,
                      params.tiling_step, params.tiling_max_replicates)
     SIM_RNA_ALIGN(TILE_TRANSCRIPTS.out.reads, transcriptome)
     // Tiles are cut from the transcripts in their own orientation.
     SIM_RNA_HAPLOTYPE_COUNT(SIM_RNA_ALIGN.out.bam, tx2gene, 'fw')
     BUILD_MAPPING_PRIORS(
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_counts, 'SIM_HAP1'),
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_counts, 'SIM_HAP2'),
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.isoform_counts, 'SIM_HAP1'),
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.isoform_counts, 'SIM_HAP2'),
+        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_hs_counts, 'SIM_HAP1'),
+        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_hs_counts, 'SIM_HAP2'),
+        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts, 'SIM_HAP1'),
+        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts, 'SIM_HAP2'),
         TILE_TRANSCRIPTS.out.weighting.first(),
         params.min_simulated_reads)
 
     emit:
-    priors         = BUILD_MAPPING_PRIORS.out.priors
-    isoform_priors = BUILD_MAPPING_PRIORS.out.isoform_priors
+    gene_priors       = BUILD_MAPPING_PRIORS.out.gene_priors
+    transcript_priors = BUILD_MAPPING_PRIORS.out.transcript_priors
 }
 
 
@@ -241,8 +241,8 @@ workflow {
     if (!(params.step in ['all', 'annotation', 'dna', 'rna', 'diffase'])) {
         error '--step must be one of: all, annotation, dna, rna, diffase'
     }
-    if (!(params.level in ['gene', 'isoform'])) {
-        error "--level must be 'gene' or 'isoform'"
+    if (!(params.level in ['gene', 'transcript'])) {
+        error "--level must be 'gene' or 'transcript'"
     }
     if (params.step in ['all', 'diffase'] && !params.contrast) {
         error 'Missing required parameter --contrast (example: Treatment:Control, or Case1:Control,Case2:Control)'
@@ -263,17 +263,17 @@ workflow {
         RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
     }
     else if (params.step == 'diffase') {
-        if (!params.counts && !params.rna_counts) error 'Provide --counts or --rna_counts'
+        if (!params.counts && !params.hs_counts) error 'Provide --counts or --hs_counts'
         def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'), 'diffase').samplesheet
         // The transcriptome is only rebuilt when the priors have to be simulated.
         // Everything else this step needs from the annotation is a plain map of
         // genes, transcripts and chromosomes, which comes straight from the GFF3.
         def simulate_priors = !params.priors
-        // Copy number is always keyed by gene, so isoform-level counts need the
+        // Copy number is always keyed by gene, so transcript-level counts need the
         // transcript-to-gene map; samplesheet ploidy needs the gene-to-chromosome
         // map. Both come from the GFF3 alone.
         def needs_ploidy_map = !params.counts && !params.copy_number
-        def needs_tx2gene = isoformLevel() && !params.counts
+        def needs_tx2gene = transcriptLevel() && !params.counts
         def gene_map = null
         def tx2gene = emptyTx2gene()
         if (simulate_priors) {
@@ -284,7 +284,7 @@ workflow {
         else if (needs_ploidy_map || needs_tx2gene || params.gff3) {
             if (!params.gff3) {
                 error(needs_tx2gene ?
-                    'Provide --gff3: isoform-level counts need the transcript-to-gene map to find their copy number' :
+                    'Provide --gff3: transcript-level counts need the transcript-to-gene map to find their copy number' :
                     'Provide --gff3: samplesheet ploidy needs the gene-to-chromosome map')
             }
             BUILD_FEATURE_MAP(requiredFile(params.gff3, 'gff3'))
@@ -295,8 +295,8 @@ workflow {
         if (params.priors) priors = requiredFile(params.priors, 'priors')
         else {
             PRIORS_WF(REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
-                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx, isoformUsage())
-            priors = isoformLevel() ? PRIORS_WF.out.isoform_priors : PRIORS_WF.out.priors
+                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx, transcriptQuant())
+            priors = transcriptLevel() ? PRIORS_WF.out.transcript_priors : PRIORS_WF.out.gene_priors
         }
         if (params.counts) {
             PREPARE_COMBINED_ASE_INPUT(sheet, requiredFile(params.counts, 'counts'), priors)
@@ -309,7 +309,7 @@ workflow {
                 COPY_NUMBER_FROM_PLOIDY(sheet, gene_map)
                 copy_number = COPY_NUMBER_FROM_PLOIDY.out.copy_number
             }
-            PREPARE_ASE_INPUT(sheet, requiredFile(params.rna_counts, 'rna_counts'),
+            PREPARE_ASE_INPUT(sheet, requiredFile(params.hs_counts, 'hs_counts'),
                               copy_number, priors, tx2gene)
             DIFFASE_WF(PREPARE_ASE_INPUT.out.ase_input)
         }
@@ -334,15 +334,15 @@ workflow {
         else {
             // The Oarfish transcript table is already there, so the priors are
             // weighted by expression without the user having to supply anything.
-            def usage = RNA_WF.out.transcript_quant
-            if (isoformLevel()) usage = isoformUsage()
-            else if (params.isoform_usage) usage = requiredFile(params.isoform_usage, 'isoform_usage')
+            def weights = RNA_WF.out.transcript_quant
+            if (transcriptLevel()) weights = transcriptQuant()
+            else if (params.transcript_quant) weights = requiredFile(params.transcript_quant, 'transcript_quant')
             PRIORS_WF(REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
-                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx, usage)
-            priors = isoformLevel() ? PRIORS_WF.out.isoform_priors : PRIORS_WF.out.priors
+                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx, weights)
+            priors = transcriptLevel() ? PRIORS_WF.out.transcript_priors : PRIORS_WF.out.gene_priors
         }
-        def rna_counts = isoformLevel() ? RNA_WF.out.isoform_counts : RNA_WF.out.counts
-        PREPARE_ASE_INPUT(sheet, rna_counts, copy_number, priors, REFERENCE_WF.out.tx2gene)
+        def hs_counts = transcriptLevel() ? RNA_WF.out.transcript_hs_counts : RNA_WF.out.gene_hs_counts
+        PREPARE_ASE_INPUT(sheet, hs_counts, copy_number, priors, REFERENCE_WF.out.tx2gene)
         DIFFASE_WF(PREPARE_ASE_INPUT.out.ase_input)
     }
 }

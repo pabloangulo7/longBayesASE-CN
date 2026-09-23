@@ -4,7 +4,7 @@ process TILE_TRANSCRIPTS {
 
     input:
     tuple val(meta), val(hap), path(transcriptome)
-    path isoform_usage
+    path transcript_quant
     path tx2gene
     val read_length
     val step
@@ -20,7 +20,7 @@ process TILE_TRANSCRIPTS {
         --transcriptome ${transcriptome} \
         --read-length ${read_length} \
         --step ${step} \
-        --isoform-usage ${isoform_usage} \
+        --transcript-quant ${transcript_quant} \
         --tx2gene ${tx2gene} \
         --max-replicates ${max_replicates} \
         --weighting-report weighting.txt \
@@ -41,14 +41,14 @@ process BUILD_MAPPING_PRIORS {
     input:
     path hap1_genes
     path hap2_genes
-    path hap1_isoforms
-    path hap2_isoforms
+    path hap1_transcripts
+    path hap2_transcripts
     path weighting
     val min_simulated_reads
 
     output:
-    path 'mapping_priors.tsv', emit: priors
-    path 'mapping_priors.isoforms.tsv', emit: isoform_priors
+    path 'mapping_priors.gene.tsv', emit: gene_priors
+    path 'mapping_priors.transcript.tsv', emit: transcript_priors
 
     script:
     """
@@ -58,18 +58,18 @@ process BUILD_MAPPING_PRIORS {
         --hap2-counts ${hap2_genes} \
         --min-simulated-reads ${min_simulated_reads} \
         --weighting "\${weighting}" \
-        --output mapping_priors.tsv
+        --output mapping_priors.gene.tsv
     build_priors.py \
-        --hap1-counts ${hap1_isoforms} \
-        --hap2-counts ${hap2_isoforms} \
+        --hap1-counts ${hap1_transcripts} \
+        --hap2-counts ${hap2_transcripts} \
         --min-simulated-reads ${min_simulated_reads} \
         --weighting "\${weighting}" \
-        --output mapping_priors.isoforms.tsv
+        --output mapping_priors.transcript.tsv
     """
 
     stub:
     """
-    printf '# weighting: uniform\nID\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\tn_hap1\tn_hap2\nGENE1\t0.8\t0.8\t0\t0\t100\t100\n' > mapping_priors.tsv
-    cp mapping_priors.tsv mapping_priors.isoforms.tsv
+    printf '# weighting: uniform\nID\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\tn_hap1\tn_hap2\nGENE1\t0.8\t0.8\t0\t0\t100\t100\n' > mapping_priors.gene.tsv
+    cp mapping_priors.gene.tsv mapping_priors.transcript.tsv
     """
 }

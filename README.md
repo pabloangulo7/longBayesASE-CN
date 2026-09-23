@@ -17,26 +17,7 @@ FASTQ and uBAM inputs are aligned by the pipeline. A DNA BAM already aligned to 
 
 ## Workflow
 
-```mermaid
-flowchart LR
-    F[Diploid FASTA] --> A[Annotation files]
-    G[GFF3 annotation file] --> A
-    D[ONT DNA<br/>FASTQ, uBAM or BAM] --> DC[Haplotype-specific DNA quantification]
-    A --> DC
-    DC --> CN[Gene copy numbers]
-    R[ONT cDNA<br/>FASTQ, uBAM or BAM] --> RC[Haplotype-specific RNA quantification]
-    A --> RC
-    R --> Q[Oarfish expression quantification]
-    Q --> E[Gene and transcript expression]
-    A --> T[Calculation of priors by read simulation]
-    Q --> U[Isoform usage]
-    U -.-> T
-    T --> P[Mapping priors]
-    CN --> M[Copy-number-aware BayesASE]
-    RC --> M
-    P --> M
-    M --> O[Differential ASE results]
-```
+![longBayesASE-CN workflow](docs/images/workflow.svg)
 
 ## Quick start
 
@@ -71,7 +52,7 @@ The default `--step all` runs annotation preparation, DNA, RNA, mapping-prior si
 | `--gff3` | Annotation already mapped to the personalized assembly. |
 | `--source_fasta`, `--source_gff3` | Reference genome and annotation used by Liftoff when `--gff3` is not available. |
 | `--contrast` | Conditions to compare, written as `conditionA:conditionB`. Several contrasts may be listed separated by commas. |
-| `--level` | `gene` (default) or `isoform`: the features the differential test is run on. |
+| `--level` | `gene` (default) or `transcript`: the features the differential test is run on. |
 | `--outdir` | Output directory; default: `results`. |
 | `--step` | `all`, `annotation`, `dna`, `rna` or `diffase`; default: `all`. |
 
@@ -101,14 +82,15 @@ Multiple raw read files for one library may be separated with semicolons. An ali
 |---|---|
 | `reference/` | Diploid GFF3, gene BED/SAF, transcriptomes and annotation summary. |
 | `dna/gene_copy_numbers.tsv` | `sample`, gene `ID`, chromosome, `CN_H1`, `CN_H2`. |
-| `rna/gene_counts.tsv` | `sample`, gene `ID`, `H1`, `H2`, `NonHS`: haplotype-specific counts for the allele-specific model. |
-| `rna/isoform_counts.tsv` | The same table at isoform level. |
+| `rna/gene_HS_counts.tsv` | `sample`, gene `ID`, `H1`, `H2`, `NonHS`: haplotype-specific counts for the allele-specific model. |
+| `rna/transcript_HS_counts.tsv` | The same per transcript. |
 | `rna/gene_quant.tsv` | `sample`, gene `ID`, `num_reads`: Oarfish expression with both haplotypes summed, for differential expression. |
 | `rna/transcript_quant.tsv` | The same per transcript, for isoform usage. |
+| `rna/counts/` | Per-library haplotype-specific counts with every read category, read groups and QC. |
 | `rna/oarfish/` | Oarfish output per library, including the inferential replicates (`*.infreps.pq`) and the unique/ambiguous read counts (`*.ambig_info.tsv`). |
-| `priors/mapping_priors.tsv` | Per-gene H1 and H2 mapping probabilities. The header records how the tiles were weighted. |
-| `priors/mapping_priors.isoforms.tsv` | The same probabilities per isoform, for isoform-level analyses. |
-| `diffase/longBayesASE-CN.results.tsv` | Allelic imbalance, differential ASE, p-values, ROPE and fit status. |
+| `priors/mapping_priors.gene.tsv` | Per-gene H1 and H2 mapping probabilities. The header records how the tiles were weighted. |
+| `priors/mapping_priors.transcript.tsv` | The same per transcript. |
+| `diffase/diffASE_results.tsv` | Allelic imbalance, differential ASE, p-values, ROPE and fit status. |
 
 ## Run one part of the pipeline
 
@@ -121,7 +103,7 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --step annotation --fasta assembly.fa --gff3 assembly.gff3 --outdir results
 ```
 
-If diploid assembly is not annotated, use `--source_fasta` and `--source_gff3` instead of `--gff3` for liftover step with liftoff. The main output is `results/reference/`.
+If the diploid assembly is not annotated, use `--source_fasta` and `--source_gff3` instead of `--gff3` to lift the annotation over with Liftoff. The main output is `results/reference/`.
 
 ### DNA
 
@@ -137,10 +119,10 @@ Two options shape the estimate:
 
 | Parameter | Options |
 |---|---|
-| `--copy_number_level` | `chromosome` (default) gives every gene on a chromosome the same value, the median over its genes. `gene` estimates each gene from its own depth, which is considerably noisier. |
-| `--gene_copies` | `all` (default) adds up the coverage of every copy Liftoff annotated for a gene, which measures how many copies of that sequence the genome carries. `primary` keeps only the canonical locus. |
+| `--copy_number_level` | `chromosome` (default) gives every gene on a chromosome the same value, the median over its genes. `gene` estimates each gene from its own depth, which is noisier. |
+| `--gene_copies` | `all` (default) adds up the coverage of every copy Liftoff annotated for a gene. `primary` keeps only the canonical locus. |
 
-Only genes annotated as a single copy in both haplotypes enter the diploid baseline and the per-chromosome medians, because a gene with several copies splits its reads among them and its coverage no longer measures a dosage.
+Only genes annotated as a single copy in both haplotypes are used for the diploid baseline and the per-chromosome medians.
 
 ### RNA
 
@@ -154,8 +136,8 @@ FASTQ/uBAM is aligned to the generated diploid transcriptome; a `.bam` in the RN
 
 The alignments are used twice:
 
-- **Haplotype-specific counts** (`rna/gene_counts.tsv`, `rna/isoform_counts.tsv`, columns `sample`, `ID`, `H1`, `H2`, `NonHS`). A read is described by the alignments that reach its best alignment score: H1 or H2 when all of them fall on one haplotype, NonHS when both haplotypes explain it equally well. The haplotype rests on the sequence alone, never on an abundance estimate, so the simulated reads behind the priors are classified by exactly the same rule. Reads whose best alignments fall on several genes are reported in the multigene and complex categories of `rna/counts/` and left out of the model.
-- **Expression** (`rna/gene_quant.tsv`, `rna/transcript_quant.tsv`) from Oarfish, with the two haplotypes of every transcript summed. Oarfish resolves reads shared between transcripts by expectation-maximization, and its inferential replicates carry that uncertainty into differential expression or isoform-usage analyses.
+- **Haplotype-specific counts** (`rna/gene_HS_counts.tsv`, `rna/transcript_HS_counts.tsv`). A read is H1 or H2 when all the alignments that reach its best score fall on one haplotype, and NonHS when both haplotypes explain it equally well. Reads whose best alignments fall on several features are kept in the multigene and complex categories of `rna/counts/` and left out of the model.
+- **Expression** (`rna/gene_quant.tsv`, `rna/transcript_quant.tsv`) from Oarfish, with the two haplotypes of every transcript summed. The inferential replicates in `rna/oarfish/` carry the quantification uncertainty into differential expression or isoform-usage analyses.
 
 ### Differential ASE
 
@@ -165,27 +147,27 @@ Fits the model to the RNA counts, corrected by gene copy number and by the mappi
 nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --step diffase \
   --samplesheet samples.tsv \
-  --rna_counts results/rna/gene_counts.tsv \
-  --isoform_usage results/rna/transcript_quant.tsv \
+  --hs_counts results/rna/gene_HS_counts.tsv \
+  --transcript_quant results/rna/transcript_quant.tsv \
   --copy_number results/dna/gene_copy_numbers.tsv \
   --fasta assembly.fa --gff3 assembly.gff3 \
   --contrast Aneuploid:Control \
   --outdir diffase_results
 ```
 
-Results go to `diffase/longBayesASE-CN.results.tsv`, where the `test` column names the comparison each row belongs to.
+Results go to `diffase/diffASE_results.tsv`, where the `test` column names the comparison each row belongs to.
 
 #### Mapping priors
 
-The priors are the `r1` and `r2` of the model. Every transcript of each haplotype is cut into overlapping tiles, the tiles of each haplotype are aligned to the diploid transcriptome as a separate library, and they are classified by the same rule as the real reads: `r1` is the fraction of the reads simulated from H1 that come out as H1, the rest being NonHS, and likewise for `r2`.
+The priors are the `r1` and `r2` of the model. Every transcript of each haplotype is cut into overlapping tiles, the tiles of each haplotype are aligned to the diploid transcriptome as a separate library and classified like the real reads: `r1` is the fraction of the reads simulated from H1 that come out as H1, and `r2` the same for H2.
 
 | You supply | What happens |
 |---|---|
-| `--priors mapping_priors.tsv` | Used as given. |
+| `--priors mapping_priors.gene.tsv` | Used as given. |
 | nothing | Simulated from the annotation. A gene's probability is the average over its isoforms, weighted by their length. |
-| `--isoform_usage transcript_quant.tsv` | Simulated and weighted by how much each isoform is expressed instead of by its length. |
+| `--transcript_quant transcript_quant.tsv` | Simulated, with each isoform weighted by its expression summed over all samples. |
 
-`--step all` weights by expression on its own, because `rna/transcript_quant.tsv` is produced along the way. The usage table is summed over every sample before it is used: a prior built from one condition would no longer cancel out of the differential test.
+`--step all` uses `rna/transcript_quant.tsv` for the weighting automatically.
 
 #### Copy number
 
@@ -195,19 +177,19 @@ The priors are the `r1` and `r2` of the model. Every transcript of each haplotyp
 | the samplesheet `ploidy` column | Expanded to every gene on the chromosomes listed there. |
 | neither | Every gene is treated as diploid, H1=1 and H2=1. |
 
-#### Gene or isoform level
+#### Gene or transcript level
 
-The RNA step writes both tables and `--level` decides which one is tested: `gene` (the default) or `isoform`. Run on its own, pass the tables of the level asked for:
+The RNA step writes both tables and `--level` decides which one is tested: `gene` (the default) or `transcript`. Run on its own, pass the tables of that level:
 
 ```bash
-  --level isoform \
-  --rna_counts results/rna/isoform_counts.tsv \
-  --priors results/priors/mapping_priors.isoforms.tsv
+  --level transcript \
+  --hs_counts results/rna/transcript_HS_counts.tsv \
+  --priors results/priors/mapping_priors.transcript.tsv
 ```
 
-Copy number is always measured per gene, and isoform-level counts reach it through the transcript-to-gene map. Weighting by isoform usage does not apply at this level: an isoform's probability comes from its own tiles and is never averaged with the other isoforms of its gene.
+Copy number is always measured per gene and reaches transcripts through the transcript-to-gene map. Expression weighting does not apply at this level, because each transcript's prior comes from its own tiles.
 
-A read compatible with several isoforms of one gene is counted as multi-feature and dropped, whereas at gene level that same read collapses onto one gene and is kept. Isoform counts are therefore much lower and the test has less power. The simulated tiles pass through the same filter, so the priors stay consistent with the data; there is simply less of it.
+A read compatible with several isoforms of one gene is left out at transcript level but kept at gene level, so transcript-level counts are lower.
 
 #### Counts and copy number in one table
 
@@ -217,26 +199,26 @@ Sample1_R1	GENE1	30	28	12	1	1
 Sample2_R1	GENE1	54	25	15	2	1
 ```
 
-Pass it with `--counts combined_counts.tsv` instead of `--rna_counts` and `--copy_number`. The small files in `examples/toy_ase/` run this way without any sequencing data:
+Pass it with `--counts combined_counts.tsv` instead of `--hs_counts` and `--copy_number`. The small files in `examples/toy_ase/` run this way without any sequencing data:
 
 ```bash
 nextflow run . -profile conda \
   --step diffase \
   --samplesheet examples/toy_ase/samplesheet.tsv \
   --counts examples/toy_ase/combined_counts.tsv \
-  --priors examples/toy_ase/mapping_priors.tsv \
+  --priors examples/toy_ase/mapping_priors.gene.tsv \
   --contrast Treatment:Control \
   --outdir toy_results
 ```
 
 ## Optional parameters
 
-Defaults reproduce the implemented workflow. Most analyses only need the parameters above.
+Most analyses only need the parameters above.
 
 | Parameter | Default | Purpose |
 |---|---:|---|
 | `--rna_strand` | `fw` | Orientation a cDNA read must have on its transcript: `fw` for oriented ONT cDNA, `rc` or `both`. Applies to the haplotype counts and to Oarfish. |
-| `--oarfish_score` | `1.0` | Fraction of a read's best alignment score an alignment needs for Oarfish to consider it. At `1.0` Oarfish sees exactly the best alignments the haplotype counts are built from. |
+| `--oarfish_score` | `1.0` | Fraction of a read's best alignment score an alignment needs for Oarfish to consider it. |
 | `--oarfish_bootstraps` | `30` | Oarfish inferential replicates; `0` skips them. |
 | `--copy_number_level` | `chromosome` | `chromosome` or `gene`. |
 | `--cn_change_threshold` | `1.2` | Fold change from the diploid baseline, in either direction, that makes a chromosome aneuploid. |
@@ -245,8 +227,8 @@ Defaults reproduce the implemented workflow. Most analyses only need the paramet
 | `--min_gene_depth` | `1` | Total depth a gene needs before its own copy number is estimated with `--copy_number_level gene`. |
 | `--tiling_read_length` | `1000` | Simulated transcript-tile length. |
 | `--tiling_step` | `100` | Distance between consecutive tiles. |
-| `--min_simulated_reads` | `1` | Simulated reads a gene needs before it gets a prior. The tiling is exhaustive, not a sample, so a low count means few possible start positions rather than a noisy estimate: a transcript shorter than the read length has exactly one. Raising it drops short genes, and the prior table reports `n_hap1` and `n_hap2` for filtering afterwards instead. |
-| `--isoform_usage` | – | Oarfish transcript table (`rna/transcript_quant.tsv`) used to weight the tiling by expression. |
+| `--min_simulated_reads` | `1` | Simulated reads a feature needs to get a prior. The prior tables report `n_hap1` and `n_hap2` for filtering afterwards. |
+| `--transcript_quant` | – | Oarfish transcript table (`rna/transcript_quant.tsv`) used to weight the tiling by expression. |
 | `--tiling_max_replicates` | `3` | Maximum tile replicates for the dominant isoform of a gene when weighting is on. |
 | `--ase_shards` | `100` | Parallel groups of genes fitted by Stan, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per gene. |

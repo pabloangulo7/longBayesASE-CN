@@ -74,10 +74,10 @@ process RNA_HAPLOTYPE_COUNT {
     val strand
 
     output:
-    tuple val(meta), path("${meta.sample}.genes.counts.tsv"), emit: gene_counts
-    tuple val(meta), path("${meta.sample}.isoforms.counts.tsv"), emit: isoform_counts
-    tuple val(meta), path("${meta.sample}.*.qc.tsv"), path("${meta.sample}.*.complex_reads.tsv"), emit: qc
-    tuple val(meta), path("${meta.sample}.genes.readgroups.tsv"), path("${meta.sample}.isoforms.readgroups.tsv"), emit: readgroups
+    tuple val(meta), path("${meta.sample}.gene_HS_counts.tsv"), emit: gene_hs_counts
+    tuple val(meta), path("${meta.sample}.transcript_HS_counts.tsv"), emit: transcript_hs_counts
+    tuple val(meta), path("${meta.sample}.*_qc.tsv"), path("${meta.sample}.*_complex_reads.tsv"), emit: qc
+    tuple val(meta), path("${meta.sample}.gene_readgroups.tsv"), path("${meta.sample}.transcript_readgroups.tsv"), emit: readgroups
 
     script:
     """
@@ -91,18 +91,18 @@ process RNA_HAPLOTYPE_COUNT {
 
     stub:
     """
-    printf 'ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\nGENE1\t10\t0\t10\t0\t5\t0\n' > ${meta.sample}.genes.counts.tsv
-    printf 'ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\nTX1\t10\t0\t10\t0\t5\t0\n' > ${meta.sample}.isoforms.counts.tsv
-    printf 'metric\treads\nH1\t10\n' > ${meta.sample}.genes.qc.tsv
-    cp ${meta.sample}.genes.qc.tsv ${meta.sample}.isoforms.qc.tsv
-    printf 'Read_ID\tGroup\n' > ${meta.sample}.genes.readgroups.tsv
-    cp ${meta.sample}.genes.readgroups.tsv ${meta.sample}.isoforms.readgroups.tsv
-    touch ${meta.sample}.genes.complex_reads.tsv ${meta.sample}.isoforms.complex_reads.tsv
+    printf 'ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\nGENE1\t10\t0\t10\t0\t5\t0\n' > ${meta.sample}.gene_HS_counts.tsv
+    printf 'ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\nTX1\t10\t0\t10\t0\t5\t0\n' > ${meta.sample}.transcript_HS_counts.tsv
+    printf 'metric\treads\nH1\t10\n' > ${meta.sample}.gene_qc.tsv
+    cp ${meta.sample}.gene_qc.tsv ${meta.sample}.transcript_qc.tsv
+    printf 'Read_ID\tGroup\n' > ${meta.sample}.gene_readgroups.tsv
+    cp ${meta.sample}.gene_readgroups.tsv ${meta.sample}.transcript_readgroups.tsv
+    touch ${meta.sample}.gene_complex_reads.tsv ${meta.sample}.transcript_complex_reads.tsv
     """
 }
 
-process MERGE_RNA_COUNTS {
-    tag 'unified RNA counts'
+process MERGE_HS_COUNTS {
+    tag "${outname}"
     label 'process_low'
 
     input:
@@ -114,7 +114,7 @@ process MERGE_RNA_COUNTS {
 
     script:
     """
-    merge_rna_counts.py --counts ${counts} --output ${outname}
+    merge_hs_counts.py --counts ${counts} --output ${outname}
     """
 
     stub:

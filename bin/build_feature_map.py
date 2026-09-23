@@ -2,7 +2,7 @@
 """Gene, transcript and chromosome maps read straight from a diploid GFF3.
 
 Only the annotation is needed: no assembly FASTA and no transcriptome are
-built. This is what the ploidy route and isoform-level analyses require, and
+built. This is what the ploidy route and transcript-level analyses require, and
 the identifiers match the ones BUILD_ANNOTATION_BUNDLE produces.
 """
 

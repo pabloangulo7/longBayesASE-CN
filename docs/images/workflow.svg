@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 880" width="1440" height="880" role="img" aria-label="longBayesASE-CN workflow">
+<rect width="1440" height="880" rx="28" fill="#ffffff"/>
+<rect x="8" y="8" width="1424" height="864" rx="24" fill="none" stroke="#1d1d1f" stroke-width="5"/>
+<text x="40" y="60" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="800" fill="#1d1d1f">longBayesASE-CN<tspan font-weight="500">: differential allele-specific expression with copy-number correction</tspan></text>
+<path d="M 110,285 L 180,285" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 180,285 C 215.0,285 215.0,330 250,330" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round"/>
+<path d="M 110,375 L 180,375" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 180,375 C 215.0,375 215.0,330 250,330" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round"/>
+<path d="M 250,330 L 430,330" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 430,330 C 495.0,330 495.0,185 560,185" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round"/>
+<path d="M 430,330 C 495.0,330 495.0,490 560,490" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round"/>
+<path d="M 430,330 C 495.0,330 495.0,680 560,680" fill="none" stroke="#D9A21B" stroke-width="11" stroke-linecap="round"/>
+<path d="M 110,185 L 1060,185" fill="none" stroke="#2F6DB5" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 1060,185 C 1127.5,185 1127.5,378 1195,378" fill="none" stroke="#2F6DB5" stroke-width="11" stroke-linecap="round"/>
+<path d="M 110,490 L 920,490" fill="none" stroke="#2E9E5B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 920,490 C 1057.5,490 1057.5,400 1195,400" fill="none" stroke="#2E9E5B" stroke-width="11" stroke-linecap="round"/>
+<path d="M 560,490 C 620.0,490 620.0,580 680,580" fill="none" stroke="#17A2B8" stroke-width="11" stroke-linecap="round"/>
+<path d="M 680,580 L 860,580" fill="none" stroke="#17A2B8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="857" y="565" width="7" height="30" rx="2" fill="#1d1d1f"/>
+<path d="M 560,680 L 1040,680" fill="none" stroke="#8250C4" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 1040,680 C 1117.5,680 1117.5,422 1195,422" fill="none" stroke="#8250C4" stroke-width="11" stroke-linecap="round"/>
+<path d="M 680,598 L 680,662" fill="none" stroke="#17A2B8" stroke-width="5" stroke-dasharray="3 9" stroke-linecap="round"/>
+<text x="694" y="635.0" font-family="Helvetica, Arial, sans-serif" font-size="14" font-style="italic" fill="#1d1d1f">isoform weights</text>
+<path d="M 1195,400 L 1320,400" fill="none" stroke="#D1495B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1317" y="385" width="7" height="30" rx="2" fill="#1d1d1f"/>
+<path d="M 31.0,145.0 Q 31.0,139.0 37.0,139.0 L 91.0,139.0 L 109.0,157.0 L 109.0,225.0 Q 109.0,231.0 103.0,231.0 L 37.0,231.0 Q 31.0,231.0 31.0,225.0 Z" fill="#1d1d1f"/>
+<path d="M 91.0,139.0 L 91.0,157.0 L 109.0,157.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="70" y="181" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">DNA</text>
+<text x="70" y="200" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#fff">fq/bam</text>
+<path d="M 31.0,251.0 Q 31.0,245.0 37.0,245.0 L 91.0,245.0 L 109.0,263.0 L 109.0,319.0 Q 109.0,325.0 103.0,325.0 L 37.0,325.0 Q 31.0,325.0 31.0,319.0 Z" fill="#1d1d1f"/>
+<path d="M 91.0,245.0 L 91.0,263.0 L 109.0,263.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="70" y="281" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">phased</text>
+<text x="70" y="300" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#fff">fasta</text>
+<path d="M 31.0,341.0 Q 31.0,335.0 37.0,335.0 L 91.0,335.0 L 109.0,353.0 L 109.0,409.0 Q 109.0,415.0 103.0,415.0 L 37.0,415.0 Q 31.0,415.0 31.0,409.0 Z" fill="#1d1d1f"/>
+<path d="M 91.0,335.0 L 91.0,353.0 L 109.0,353.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="70" y="379" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">gff3</text>
+<path d="M 31.0,450.0 Q 31.0,444.0 37.0,444.0 L 91.0,444.0 L 109.0,462.0 L 109.0,530.0 Q 109.0,536.0 103.0,536.0 L 37.0,536.0 Q 31.0,536.0 31.0,530.0 Z" fill="#1d1d1f"/>
+<path d="M 91.0,444.0 L 91.0,462.0 L 109.0,462.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="70" y="486" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">cDNA</text>
+<text x="70" y="505" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#fff">fq/bam</text>
+<circle cx="250" cy="330" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="250" y="365" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">Liftoff</text>
+<text x="250" y="382" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">(optional)</text>
+<circle cx="345" cy="330" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="345" y="365" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">gffread</text>
+<text x="345" y="382" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">transcriptome</text>
+<circle cx="560" cy="185" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="560" y="162" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">minimap2</text>
+<circle cx="660" cy="185" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="660" y="145" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">best-score</text>
+<text x="660" y="162" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">haplotype</text>
+<circle cx="770" cy="185" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="770" y="162" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">featureCounts</text>
+<circle cx="880" cy="185" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="880" y="145" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">HS / NonHS</text>
+<text x="880" y="162" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">split</text>
+<circle cx="980" cy="185" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="980" y="145" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">bedtools</text>
+<text x="980" y="162" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">coverage</text>
+<circle cx="1060" cy="185" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="1060" y="220" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">copy</text>
+<text x="1060" y="237" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">number</text>
+<circle cx="560" cy="490" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="560" y="525" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">minimap2</text>
+<circle cx="720" cy="490" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="720" y="450" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">best-score</text>
+<text x="720" y="467" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">haplotype</text>
+<circle cx="850" cy="490" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="850" y="525" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">gene &amp;</text>
+<text x="850" y="542" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">transcript</text>
+<circle cx="680" cy="580" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="680" y="557" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">oarfish</text>
+<circle cx="680" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="680" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">tile H1 and H2</text>
+<text x="680" y="732" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">transcripts</text>
+<circle cx="800" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="800" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">minimap2</text>
+<circle cx="910" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="910" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">best-score</text>
+<text x="910" y="732" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">haplotype</text>
+<circle cx="1020" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="1020" y="657" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">r1, r2</text>
+<rect x="1165" y="358" width="60" height="84" rx="30" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="1233" y="338" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">copy-number-aware</text>
+<text x="1233" y="356" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">BayesASE (Stan)</text>
+<path d="M 1060,171 L 1060,145" stroke="#1d1d1f" stroke-width="4" stroke-linecap="round"/>
+<path d="M 1032.0,85.0 Q 1032.0,79.0 1038.0,79.0 L 1070.0,79.0 L 1088.0,97.0 L 1088.0,139.0 Q 1088.0,145.0 1082.0,145.0 L 1038.0,145.0 Q 1032.0,145.0 1032.0,139.0 Z" fill="#1d1d1f"/>
+<path d="M 1070.0,79.0 L 1070.0,97.0 L 1088.0,97.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="1060" y="116" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
+<text x="1098" y="107" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">gene_copy_numbers</text>
+<path d="M 850,476 L 850,450" stroke="#1d1d1f" stroke-width="4" stroke-linecap="round"/>
+<path d="M 822.0,390.0 Q 822.0,384.0 828.0,384.0 L 860.0,384.0 L 878.0,402.0 L 878.0,444.0 Q 878.0,450.0 872.0,450.0 L 828.0,450.0 Q 822.0,450.0 822.0,444.0 Z" fill="#1d1d1f"/>
+<path d="M 860.0,384.0 L 860.0,402.0 L 878.0,402.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="850" y="421" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
+<text x="888" y="404" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">gene_HS_counts</text>
+<text x="888" y="422" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">transcript_HS_counts</text>
+<path d="M 887.0,553.0 Q 887.0,547.0 893.0,547.0 L 925.0,547.0 L 943.0,565.0 L 943.0,607.0 Q 943.0,613.0 937.0,613.0 L 893.0,613.0 Q 887.0,613.0 887.0,607.0 Z" fill="#1d1d1f"/>
+<path d="M 925.0,547.0 L 925.0,565.0 L 943.0,565.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="915" y="584" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
+<text x="953" y="575" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">gene_quant</text>
+<text x="953" y="593" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">transcript_quant</text>
+<path d="M 1020,694 L 1020,714" stroke="#1d1d1f" stroke-width="4" stroke-linecap="round"/>
+<path d="M 992.0,720.0 Q 992.0,714.0 998.0,714.0 L 1030.0,714.0 L 1048.0,732.0 L 1048.0,774.0 Q 1048.0,780.0 1042.0,780.0 L 998.0,780.0 Q 992.0,780.0 992.0,774.0 Z" fill="#1d1d1f"/>
+<path d="M 1030.0,714.0 L 1030.0,732.0 L 1048.0,732.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="1020" y="751" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
+<text x="1058" y="742" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">mapping_priors</text>
+<text x="1058" y="760" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">.gene / .transcript</text>
+<path d="M 1342.0,373.0 Q 1342.0,367.0 1348.0,367.0 L 1380.0,367.0 L 1398.0,385.0 L 1398.0,427.0 Q 1398.0,433.0 1392.0,433.0 L 1348.0,433.0 Q 1342.0,433.0 1342.0,427.0 Z" fill="#1d1d1f"/>
+<path d="M 1380.0,367.0 L 1380.0,385.0 L 1398.0,385.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="1370" y="404" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
+<text x="1370" y="456" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">diffASE_results</text>
+<rect x="60" y="798" width="60" height="12" rx="6" fill="#D9A21B"/>
+<text x="132" y="809" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#1d1d1f">Reference annotation</text>
+<rect x="390" y="798" width="60" height="12" rx="6" fill="#2F6DB5"/>
+<text x="462" y="809" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#1d1d1f">DNA copy number</text>
+<rect x="720" y="798" width="60" height="12" rx="6" fill="#2E9E5B"/>
+<text x="792" y="809" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#1d1d1f">RNA haplotype-specific counts</text>
+<rect x="60" y="828" width="60" height="12" rx="6" fill="#17A2B8"/>
+<text x="132" y="839" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#1d1d1f">RNA expression</text>
+<rect x="390" y="828" width="60" height="12" rx="6" fill="#8250C4"/>
+<text x="462" y="839" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#1d1d1f">Mapping priors (read simulation)</text>
+<rect x="720" y="828" width="60" height="12" rx="6" fill="#D1495B"/>
+<text x="792" y="839" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#1d1d1f">Differential ASE</text>
+</svg>

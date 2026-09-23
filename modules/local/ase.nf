@@ -4,7 +4,7 @@ process PREPARE_ASE_INPUT {
 
     input:
     path samplesheet
-    path rna_counts
+    path hs_counts
     path copy_number
     path priors
     path tx2gene
@@ -16,7 +16,7 @@ process PREPARE_ASE_INPUT {
     """
     prepare_ase_input.py \
         --samplesheet ${samplesheet} \
-        --rna-counts ${rna_counts} \
+        --hs-counts ${hs_counts} \
         --copy-number ${copy_number} \
         --priors ${priors} \
         --tx2gene ${tx2gene} \
@@ -155,15 +155,15 @@ process MERGE_ASE_RESULTS {
     path results
 
     output:
-    path 'longBayesASE-CN.results.tsv', emit: results
+    path 'diffASE_results.tsv', emit: results
 
     script:
     """
-    merge_ase_results.py --inputs ${results} --output longBayesASE-CN.results.tsv
+    merge_ase_results.py --inputs ${results} --output diffASE_results.tsv
     """
 
     stub:
     """
-    cp ${results[0]} longBayesASE-CN.results.tsv
+    cp ${results[0]} diffASE_results.tsv
     """
 }
