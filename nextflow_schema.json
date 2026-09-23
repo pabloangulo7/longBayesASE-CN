@@ -30,7 +30,7 @@
       "properties": {
         "rna_strand": {"type": "string", "enum": ["fw", "rc", "both"], "default": "fw"},
         "oarfish_score": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 1.0},
-        "oarfish_bootstraps": {"type": "integer", "minimum": 0, "default": 30},
+        "oarfish_bootstraps": {"type": "integer", "minimum": 0, "default": 0},
         "copy_number_level": {"type": "string", "enum": ["chromosome", "gene"], "default": "chromosome"},
         "cn_change_threshold": {"type": "number", "exclusiveMinimum": 1, "default": 1.2},
         "min_haplotype_depth": {"type": "number", "minimum": 0, "default": 10},

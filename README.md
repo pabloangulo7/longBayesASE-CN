@@ -87,7 +87,7 @@ Multiple raw read files for one library may be separated with semicolons. An ali
 | `rna/gene_quant.tsv` | `sample`, gene `ID`, `num_reads`: Oarfish expression with both haplotypes summed, for differential expression. |
 | `rna/transcript_quant.tsv` | The same per transcript, for isoform usage. |
 | `rna/counts/` | Per-library haplotype-specific counts with every read category, read groups and QC. |
-| `rna/oarfish/` | Oarfish output per library, including the inferential replicates (`*.infreps.pq`) and the unique/ambiguous read counts (`*.ambig_info.tsv`). |
+| `rna/oarfish/` | Oarfish output per library, including the unique/ambiguous read counts (`*.ambig_info.tsv`) and, with `--oarfish_bootstraps`, the inferential replicates (`*.infreps.pq`). |
 | `priors/mapping_priors.gene.tsv` | Per-gene H1 and H2 mapping probabilities. The header records how the tiles were weighted. |
 | `priors/mapping_priors.transcript.tsv` | The same per transcript. |
 | `diffase/diffASE_results.tsv` | Allelic imbalance, differential ASE, p-values, ROPE and fit status. |
@@ -137,7 +137,7 @@ FASTQ/uBAM is aligned to the generated diploid transcriptome; a `.bam` in the RN
 The alignments are used twice:
 
 - **Haplotype-specific counts** (`rna/gene_HS_counts.tsv`, `rna/transcript_HS_counts.tsv`). A read is H1 or H2 when all the alignments that reach its best score fall on one haplotype, and NonHS when both haplotypes explain it equally well. Reads whose best alignments fall on several features are kept in the multigene and complex categories of `rna/counts/` and left out of the model.
-- **Expression** (`rna/gene_quant.tsv`, `rna/transcript_quant.tsv`) from Oarfish, with the two haplotypes of every transcript summed. The inferential replicates in `rna/oarfish/` carry the quantification uncertainty into differential expression or isoform-usage analyses.
+- **Expression** (`rna/gene_quant.tsv`, `rna/transcript_quant.tsv`) from Oarfish, with the two haplotypes of every transcript summed. For transcript-level differential expression or isoform usage, `--oarfish_bootstraps` adds inferential replicates that carry the quantification uncertainty into those analyses.
 
 ### Differential ASE
 
@@ -146,6 +146,7 @@ Fits the model to the RNA counts, corrected by gene copy number and by the mappi
 ```bash
 nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --step diffase \
+  --level gene \
   --samplesheet samples.tsv \
   --hs_counts results/rna/gene_HS_counts.tsv \
   --transcript_quant results/rna/transcript_quant.tsv \
@@ -219,7 +220,7 @@ Most analyses only need the parameters above.
 |---|---:|---|
 | `--rna_strand` | `fw` | Orientation a cDNA read must have on its transcript: `fw` for oriented ONT cDNA, `rc` or `both`. Applies to the haplotype counts and to Oarfish. |
 | `--oarfish_score` | `1.0` | Fraction of a read's best alignment score an alignment needs for Oarfish to consider it. |
-| `--oarfish_bootstraps` | `30` | Oarfish inferential replicates; `0` skips them. |
+| `--oarfish_bootstraps` | `0` | Oarfish inferential replicates, for uncertainty-aware transcript-level analyses (for example `30`). |
 | `--copy_number_level` | `chromosome` | `chromosome` or `gene`. |
 | `--cn_change_threshold` | `1.2` | Fold change from the diploid baseline, in either direction, that makes a chromosome aneuploid. |
 | `--gene_copies` | `all` | `all` sums the coverage of every copy Liftoff found for a gene; `primary` keeps only the canonical locus. |
