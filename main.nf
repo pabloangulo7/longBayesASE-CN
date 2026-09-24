@@ -132,6 +132,10 @@ workflow DNA_WF {
 }
 
 
+// Alignment, haplotype-specific counts and read intervals: everything the
+// allele-specific model and its priors need from the RNA libraries. The rna,
+// all and diffase steps call it under the same name, so -resume reuses the
+// counts of an earlier rna run instead of counting the libraries again.
 workflow RNA_WF {
     take:
     samplesheet
@@ -155,11 +159,8 @@ workflow RNA_WF {
     NORMALIZE_RNA_READS(input.raw)
     RNA_ALIGN(NORMALIZE_RNA_READS.out.reads, transcriptome)
     PREPARE_RNA_BAM(input.aligned.map { meta, paths -> tuple(meta, paths[0]) })
-    def bam = RNA_ALIGN.out.bam.mix(PREPARE_RNA_BAM.out.bam)
-    // Haplotype-specific counts for the allele-specific model, and the read
-    // intervals for its priors, come from the alignments; expression for
-    // differential expression and isoform usage comes from Oarfish.
-    RNA_HAPLOTYPE_COUNT(bam, tx2gene, params.rna_strand, intervals_per_feature)
+    def alignments = RNA_ALIGN.out.bam.mix(PREPARE_RNA_BAM.out.bam)
+    RNA_HAPLOTYPE_COUNT(alignments, tx2gene, params.rna_strand, intervals_per_feature)
     MERGE_GENE_HS_COUNTS(RNA_HAPLOTYPE_COUNT.out.gene_hs_counts.map { _meta, path -> path }.collect(),
                          'gene_HS_counts.tsv')
     MERGE_TRANSCRIPT_HS_COUNTS(RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts.map { _meta, path -> path }.collect(),
@@ -168,14 +169,26 @@ workflow RNA_WF {
                               'gene')
     MERGE_TRANSCRIPT_READ_INTERVALS(RNA_HAPLOTYPE_COUNT.out.transcript_read_intervals.map { _meta, path -> path }.collect(),
                                     'transcript')
-    OARFISH_QUANT(bam, params.oarfish_score, params.rna_strand, params.oarfish_bootstraps)
-    MERGE_OARFISH_QUANT(OARFISH_QUANT.out.quant.map { _meta, path -> path }.collect(), tx2gene)
 
     emit:
+    bam                       = alignments
     gene_hs_counts            = MERGE_GENE_HS_COUNTS.out.counts
     transcript_hs_counts      = MERGE_TRANSCRIPT_HS_COUNTS.out.counts
     gene_read_intervals       = MERGE_GENE_READ_INTERVALS.out.intervals
     transcript_read_intervals = MERGE_TRANSCRIPT_READ_INTERVALS.out.intervals
+}
+
+
+// Expression from Oarfish, for differential expression and isoform usage
+// outside the allele-specific model.
+workflow EXPRESSION_WF {
+    take:
+    bam
+    tx2gene
+
+    main:
+    OARFISH_QUANT(bam, params.oarfish_score, params.rna_strand, params.oarfish_bootstraps)
+    MERGE_OARFISH_QUANT(OARFISH_QUANT.out.quant.map { _meta, path -> path }.collect(), tx2gene)
 }
 
 
@@ -249,14 +262,16 @@ workflow {
         def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'), 'rna').samplesheet
         REFERENCE_WF(requiredFile(params.fasta, 'fasta'))
         RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
+        EXPRESSION_WF(RNA_WF.out.bam, REFERENCE_WF.out.tx2gene)
     }
     else if (params.step == 'diffase') {
         if (!params.counts && !params.hs_counts) error 'Provide --counts or --hs_counts'
-        def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'), 'diffase').samplesheet
+        def simulate_priors = !params.priors
+        def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'),
+                                         simulate_priors ? 'diffase_priors' : 'diffase').samplesheet
         // The transcriptome is only rebuilt when the priors have to be simulated.
         // Everything else this step needs from the annotation is a plain map of
         // genes, transcripts and chromosomes, which comes straight from the GFF3.
-        def simulate_priors = !params.priors
         // Copy number is always keyed by gene, so transcript-level counts need the
         // transcript-to-gene map; samplesheet ploidy needs the gene-to-chromosome
         // map. Both come from the GFF3 alone.
@@ -282,11 +297,13 @@ workflow {
         def priors
         if (params.priors) priors = requiredFile(params.priors, 'priors')
         else {
-            if (!params.read_intervals) {
-                error "Provide --priors, or --read_intervals (rna/${params.level}_read_intervals.tsv.gz from the rna step) to simulate them"
-            }
-            PRIORS_WF(requiredFile(params.read_intervals, 'read_intervals'), REFERENCE_WF.out.transcriptome,
-                      REFERENCE_WF.out.tx2gene, REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx)
+            // Without priors, the RNA libraries of the samplesheet are aligned and
+            // counted as in the rna step, without Oarfish, for their read intervals.
+            RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
+            def read_intervals = transcriptLevel() ? RNA_WF.out.transcript_read_intervals
+                                                   : RNA_WF.out.gene_read_intervals
+            PRIORS_WF(read_intervals, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
+                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx)
             priors = PRIORS_WF.out.priors
         }
         if (params.counts) {
@@ -310,6 +327,7 @@ workflow {
         def fasta = requiredFile(params.fasta, 'fasta')
         REFERENCE_WF(fasta)
         RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
+        EXPRESSION_WF(RNA_WF.out.bam, REFERENCE_WF.out.tx2gene)
         def copy_number
         if (params.copy_number) copy_number = requiredFile(params.copy_number, 'copy_number')
         else if (samplesHaveDNA(params.samplesheet)) {

@@ -276,6 +276,9 @@ def test_simple_samplesheet_and_ploidy(tmp_path: Path) -> None:
     assert row["condition"] == "Treatment"
     assert row["dna_id"] == "Sample2"
     assert row["ploidy"] == "chr7:2:1;chr22:1:2"
+    # Simulating the priors in the diffase step needs the RNA libraries.
+    with pytest.raises(subprocess.CalledProcessError):
+        run_script("validate_samplesheet.py", "--input", source, "--output", output, "--step", "diffase_priors")
 
 
 def test_samplesheet_accepts_multiple_technical_read_files(tmp_path: Path) -> None:

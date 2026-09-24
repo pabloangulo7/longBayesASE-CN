@@ -53,7 +53,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--step", choices=["all", "dna", "rna", "diffase"], default="all")
+    # diffase_priors is the diffase step when it has to simulate the priors,
+    # which needs the RNA libraries.
+    parser.add_argument("--step", choices=["all", "dna", "rna", "diffase", "diffase_priors"], default="all")
     args = parser.parse_args()
 
     source = Path(args.input).resolve()
@@ -83,6 +85,9 @@ def main() -> None:
             row["ploidy"] = validate_ploidy(row["ploidy"], row_number)
             if args.step in {"all", "rna"} and not row["rna"]:
                 raise ValueError(f"row {row_number}: step {args.step} requires an RNA file")
+            if args.step == "diffase_priors" and not row["rna"]:
+                raise ValueError(f"row {row_number}: simulating the mapping priors requires an RNA file; "
+                                 "give it, or pass --priors")
             if args.step == "dna" and not row["dna"]:
                 raise ValueError(f"row {row_number}: step dna requires a DNA file")
             previous_dna = dna_by_id.setdefault(row["dna_id"], row["dna"])

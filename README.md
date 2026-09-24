@@ -151,7 +151,6 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --level gene \
   --samplesheet samples.tsv \
   --hs_counts results/rna/gene_HS_counts.tsv \
-  --read_intervals results/rna/gene_read_intervals.tsv.gz \
   --copy_number results/dna/gene_copy_numbers.tsv \
   --fasta assembly.fa --gff3 assembly.gff3 \
   --contrast Aneuploid:Control \
@@ -167,9 +166,9 @@ The priors are the `r1` and `r2` of the model: the probability that a read from 
 | You supply | What happens |
 |---|---|
 | `--priors mapping_priors.gene.tsv` | Used as given. |
-| `--read_intervals gene_read_intervals.tsv.gz` | Simulated from these intervals, which must be of the same `--level`. Needs `--fasta` and `--gff3` to rebuild the transcriptome. |
+| nothing | Simulated from the RNA libraries in the samplesheet `rna` column, which are aligned (or taken as BAM) and counted as in the RNA step, without Oarfish. Needs `--fasta` and `--gff3` to rebuild the transcriptome. Run with `-resume` and the same work directory as the RNA step, the alignment and counting are reused rather than repeated. |
 
-`--step all` simulates them from its own read intervals. A feature needs at least `--min_prior_reads` (10) simulated reads per haplotype, one per real read interval, to get a prior; `n_hap1` and `n_hap2` in the table tell how many each prior rests on. Features below that have too few reads for the model to fit them anyway.
+`--step all` simulates them from the libraries it has just counted. A feature needs at least `--min_prior_reads` (10) simulated reads per haplotype, one per real read interval, to get a prior; `n_hap1` and `n_hap2` in the table tell how many each prior rests on. Features below that have too few reads for the model to fit them anyway.
 
 #### Copy number
 
@@ -181,15 +180,14 @@ The priors are the `r1` and `r2` of the model: the probability that a read from 
 
 #### Gene or transcript level
 
-The RNA step writes both tables and `--level` decides which one is tested: `gene` (the default) or `transcript`. Run on its own, pass the tables of that level:
+The RNA step writes both tables and `--level` decides which one is tested, and which priors are simulated: `gene` (the default) or `transcript`. Run on its own, pass the counts of that level:
 
 ```bash
   --level transcript \
-  --hs_counts results/rna/transcript_HS_counts.tsv \
-  --read_intervals results/rna/transcript_read_intervals.tsv.gz
+  --hs_counts results/rna/transcript_HS_counts.tsv
 ```
 
-Copy number is always measured per gene and reaches transcripts through the transcript-to-gene map. The priors are simulated for the level being tested only, from that level's read intervals.
+Copy number is always measured per gene and reaches transcripts through the transcript-to-gene map.
 
 A read compatible with several isoforms of one gene is left out at transcript level but kept at gene level, so transcript-level counts are lower.
 
@@ -220,14 +218,14 @@ Most analyses only need the parameters above.
 | Parameter | Default | Purpose |
 |---|---:|---|
 | `--rna_strand` | `fw` | Orientation a cDNA read must have on its transcript: `fw` for oriented ONT cDNA, `rc` or `both`. Applies to the haplotype counts and to Oarfish. |
-| `--oarfish_score` | `1.0` | Fraction of a read's best alignment score an alignment needs for Oarfish to consider it. |
+| `--oarfish_score` | `0.99999` | Fraction of a read's best alignment score an alignment needs for Oarfish to consider it; the default keeps only the best-scoring alignments. Avoid exactly `1`: Oarfish compares the ratio in single precision, and for about one alignment score in eight the best alignment itself falls below 1, so those reads are silently dropped (about 11% of the reads in ONT cDNA libraries). |
 | `--oarfish_bootstraps` | `0` | Oarfish inferential replicates, for uncertainty-aware transcript-level analyses (for example `30`). |
 | `--copy_number_level` | `chromosome` | `chromosome` or `gene`. |
 | `--cn_change_threshold` | `1.2` | Fold change from the diploid baseline, in either direction, that makes a chromosome aneuploid. |
 | `--gene_copies` | `all` | `all` sums the coverage of every copy Liftoff found for a gene; `primary` keeps only the canonical locus. |
 | `--min_haplotype_depth` | `10` | Haplotype-specific depth a gene needs before its own H1/H2 split is trusted; below it the gene borrows its chromosome's proportion. |
 | `--min_gene_depth` | `1` | Total depth a gene needs before its own copy number is estimated with `--copy_number_level gene`. |
-| `--prior_reads` | `2000` | Read intervals kept per feature for the mapping priors, split equally among the libraries. Set in the RNA step. |
+| `--prior_reads` | `2000` | Read intervals kept per feature for the mapping priors, split equally among the libraries. |
 | `--min_prior_reads` | `10` | Simulated reads per haplotype a feature needs to get a prior. |
 | `--ase_shards` | `100` | Parallel groups of genes fitted by Stan, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per gene. |

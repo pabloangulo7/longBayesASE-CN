@@ -117,19 +117,20 @@ jobs:
             --outdir ploidy-test-results
           test -s ploidy-test-results/diffase/diffASE_results.tsv
 
-      - name: diffASE step simulating the priors from read intervals
+      - name: diffASE step simulating the priors from the samplesheet RNA
         run: |
           nextflow run . -profile test -stub-run \
             --step diffase \
             --samplesheet tests/data/ploidy_samplesheet.tsv \
             --hs_counts tests/data/combined_counts.tsv \
-            --read_intervals tests/data/gene_read_intervals.tsv \
             --fasta tests/data/diploid.fa \
             --gff3 tests/data/diploid.gff3 \
             --contrast ANEUPLOID:WT \
             --ase_shards 1 \
             --outdir intervals-test-results
           test -s intervals-test-results/priors/mapping_priors.gene.tsv
+          test -s intervals-test-results/rna/gene_read_intervals.tsv.gz
+          test ! -e intervals-test-results/rna/oarfish
           test -s intervals-test-results/diffase/diffASE_results.tsv
 
       - name: Unknown parameters are rejected

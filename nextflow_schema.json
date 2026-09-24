@@ -15,7 +15,6 @@
         "source_fasta": {"type": "string", "format": "file-path"},
         "source_gff3": {"type": "string", "format": "file-path"},
         "contrast": {"type": "string"},
-        "read_intervals": {"type": "string", "format": "file-path"},
         "hs_counts": {"type": "string", "format": "file-path"},
         "copy_number": {"type": "string", "format": "file-path"},
         "counts": {"type": "string", "format": "file-path"},
@@ -29,7 +28,7 @@
       "type": "object",
       "properties": {
         "rna_strand": {"type": "string", "enum": ["fw", "rc", "both"], "default": "fw"},
-        "oarfish_score": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 1.0},
+        "oarfish_score": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.99999},
         "oarfish_bootstraps": {"type": "integer", "minimum": 0, "default": 0},
         "copy_number_level": {"type": "string", "enum": ["chromosome", "gene"], "default": "chromosome"},
         "cn_change_threshold": {"type": "number", "exclusiveMinimum": 1, "default": 1.2},
