@@ -86,11 +86,12 @@ Multiple raw read files for one library may be separated with semicolons. An ali
 | `rna/transcript_HS_counts.tsv` | The same per transcript. |
 | `rna/gene_quant.tsv` | `sample`, gene `ID`, `num_reads`: Oarfish expression with both haplotypes summed, for differential expression. |
 | `rna/transcript_quant.tsv` | The same per transcript, for isoform usage. |
+| `rna/gene_read_intervals.tsv.gz` | Where the counted reads lie on their transcripts (`sample`, gene `ID`, `transcript`, `start`, `end`): a sample of up to `--prior_reads` per gene, from which the mapping priors are simulated. |
+| `rna/transcript_read_intervals.tsv.gz` | The same per transcript. |
 | `rna/counts/` | Per-library haplotype-specific counts with every read category, read groups and QC. |
 | `rna/oarfish/` | Oarfish output per library, including the unique/ambiguous read counts (`*.ambig_info.tsv`) and, with `--oarfish_bootstraps`, the inferential replicates (`*.infreps.pq`). |
-| `priors/mapping_priors.gene.tsv` | Per-gene H1 and H2 mapping probabilities. The header records how the tiles were weighted. |
-| `priors/mapping_priors.transcript.tsv` | The same per transcript. |
-| `diffase/diffASE_results.tsv` | Allelic imbalance, differential ASE, p-values, ROPE and fit status. |
+| `priors/mapping_priors.gene.tsv` | Per-gene H1 and H2 mapping probabilities, with the simulated reads behind each (`n_hap1`, `n_hap2`). With `--level transcript`, `mapping_priors.transcript.tsv` per transcript instead. |
+| `diffase/diffASE_results.tsv` | Allelic imbalance per condition, differential ASE, p-values, ROPE and fit status (columns described under [Result columns](#result-columns)). |
 
 ## Run one part of the pipeline
 
@@ -134,9 +135,10 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 
 FASTQ/uBAM is aligned to the generated diploid transcriptome; a `.bam` in the RNA column is used directly and must keep every alignment of a read together, as minimap2 writes it, not sorted by coordinate.
 
-The alignments are used twice:
+The alignments are used for:
 
 - **Haplotype-specific counts** (`rna/gene_HS_counts.tsv`, `rna/transcript_HS_counts.tsv`). A read is H1 or H2 when all the alignments that reach its best score fall on one haplotype, and NonHS when both haplotypes explain it equally well. Reads whose best alignments fall on several features are kept in the multigene and complex categories of `rna/counts/` and left out of the model.
+- **Read intervals** (`rna/gene_read_intervals.tsv.gz`, `rna/transcript_read_intervals.tsv.gz`): the start and end on its transcript of a random sample of the counted reads, up to `--prior_reads` per feature split equally among the libraries. Each level is sampled on its own, so a minor isoform of a highly expressed gene keeps its own intervals. The mapping priors are simulated from them.
 - **Expression** (`rna/gene_quant.tsv`, `rna/transcript_quant.tsv`) from Oarfish, with the two haplotypes of every transcript summed. For transcript-level differential expression or isoform usage, `--oarfish_bootstraps` adds inferential replicates that carry the quantification uncertainty into those analyses.
 
 ### Differential ASE
@@ -149,7 +151,7 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --level gene \
   --samplesheet samples.tsv \
   --hs_counts results/rna/gene_HS_counts.tsv \
-  --transcript_quant results/rna/transcript_quant.tsv \
+  --read_intervals results/rna/gene_read_intervals.tsv.gz \
   --copy_number results/dna/gene_copy_numbers.tsv \
   --fasta assembly.fa --gff3 assembly.gff3 \
   --contrast Aneuploid:Control \
@@ -160,15 +162,14 @@ Results go to `diffase/diffASE_results.tsv`, where the `test` column names the c
 
 #### Mapping priors
 
-The priors are the `r1` and `r2` of the model. Every transcript of each haplotype is cut into overlapping tiles, the tiles of each haplotype are aligned to the diploid transcriptome as a separate library and classified like the real reads: `r1` is the fraction of the reads simulated from H1 that come out as H1, and `r2` the same for H2.
+The priors are the `r1` and `r2` of the model: the probability that a read from H1 (or H2) is recognised as haplotype-specific. It depends on whether the read covers a heterozygous site, so on the isoforms a gene uses and on where on them its reads start and end. Each read interval of the analysis level (`rna/gene_read_intervals.tsv.gz` or `rna/transcript_read_intervals.tsv.gz`) is cut from the H1 copy and from the H2 copy of its transcript, both sets are aligned to the diploid transcriptome with the same settings as the real reads and classified by the same rule: `r1` is the fraction of the reads simulated from H1 that come out as H1, and `r2` the same for H2. Only the positions of the real reads are used, never their alleles, and the intervals are pooled over all libraries, so every condition gets the same priors.
 
 | You supply | What happens |
 |---|---|
 | `--priors mapping_priors.gene.tsv` | Used as given. |
-| nothing | Simulated from the annotation. A gene's probability is the average over its isoforms, weighted by their length. |
-| `--transcript_quant transcript_quant.tsv` | Simulated, with each isoform weighted by its expression summed over all samples. |
+| `--read_intervals gene_read_intervals.tsv.gz` | Simulated from these intervals, which must be of the same `--level`. Needs `--fasta` and `--gff3` to rebuild the transcriptome. |
 
-`--step all` uses `rna/transcript_quant.tsv` for the weighting automatically.
+`--step all` simulates them from its own read intervals. A feature needs at least `--min_prior_reads` (10) simulated reads per haplotype, one per real read interval, to get a prior; `n_hap1` and `n_hap2` in the table tell how many each prior rests on. Features below that have too few reads for the model to fit them anyway.
 
 #### Copy number
 
@@ -185,10 +186,10 @@ The RNA step writes both tables and `--level` decides which one is tested: `gene
 ```bash
   --level transcript \
   --hs_counts results/rna/transcript_HS_counts.tsv \
-  --priors results/priors/mapping_priors.transcript.tsv
+  --read_intervals results/rna/transcript_read_intervals.tsv.gz
 ```
 
-Copy number is always measured per gene and reaches transcripts through the transcript-to-gene map. Expression weighting does not apply at this level, because each transcript's prior comes from its own tiles.
+Copy number is always measured per gene and reaches transcripts through the transcript-to-gene map. The priors are simulated for the level being tested only, from that level's read intervals.
 
 A read compatible with several isoforms of one gene is left out at transcript level but kept at gene level, so transcript-level counts are lower.
 
@@ -226,11 +227,8 @@ Most analyses only need the parameters above.
 | `--gene_copies` | `all` | `all` sums the coverage of every copy Liftoff found for a gene; `primary` keeps only the canonical locus. |
 | `--min_haplotype_depth` | `10` | Haplotype-specific depth a gene needs before its own H1/H2 split is trusted; below it the gene borrows its chromosome's proportion. |
 | `--min_gene_depth` | `1` | Total depth a gene needs before its own copy number is estimated with `--copy_number_level gene`. |
-| `--tiling_read_length` | `1000` | Simulated transcript-tile length. |
-| `--tiling_step` | `100` | Distance between consecutive tiles. |
-| `--min_simulated_reads` | `1` | Simulated reads a feature needs to get a prior. The prior tables report `n_hap1` and `n_hap2` for filtering afterwards. |
-| `--transcript_quant` | – | Oarfish transcript table (`rna/transcript_quant.tsv`) used to weight the tiling by expression. |
-| `--tiling_max_replicates` | `3` | Maximum tile replicates for the dominant isoform of a gene when weighting is on. |
+| `--prior_reads` | `2000` | Read intervals kept per feature for the mapping priors, split equally among the libraries. Set in the RNA step. |
+| `--min_prior_reads` | `10` | Simulated reads per haplotype a feature needs to get a prior. |
 | `--ase_shards` | `100` | Parallel groups of genes fitted by Stan, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per gene. |
 | `--ase_warmup` | `10000` | Stan warmup iterations. |
@@ -252,7 +250,32 @@ NonHS: [CN_H1 × (1-r1)/alpha + CN_H2 × (1-r2) × alpha] × beta
 theta:  1 / (alpha² + 1)
 ```
 
-`CN_H1` and `CN_H2` correct for haplotype dosage. `r1` and `r2` are the simulated mapping probabilities: their ratio corrects mapping bias between the haplotypes, and their level sets how many reads the model expects in NonHS. `alpha=1` and `theta=0.5` indicate balanced per-copy expression. The result table reports allelic-imbalance p-values for each condition, `diffAI_pvalue`, posterior differences, credible intervals and `rope_value`.
+`CN_H1` and `CN_H2` correct for haplotype dosage. `r1` and `r2` are the simulated mapping probabilities: their ratio corrects mapping bias between the haplotypes, and their level sets how many reads the model expects in NonHS. `alpha=1` and `theta=0.5` indicate balanced per-copy expression, so a gene whose expression follows its dosage has `theta=0.5` in every condition and is not differential.
+
+`thetaRaw` puts the group's copy number back into `theta`:
+
+```text
+thetaRaw = CN_H1 × theta / (CN_H1 × theta + CN_H2 × (1 - theta))
+```
+
+It is the H1 share of the gene's expression, the allelic balance the libraries show. It is computed from the same posterior draws, so no second model is fitted, and it equals `theta` where both haplotypes have one copy. On a gained chromosome with `CN_H1=2`, a gene that follows its dosage has `theta=0.5` and `thetaRaw=2/3`; a gene with `delta_theta` significant against the gained haplotype and a `thetaRaw` close to that of the control group has had its extra copy compensated on that allele.
+
+### Result columns
+
+| Columns | Meaning |
+|---|---|
+| `test`, `groupA`, `groupB` | The contrast; `groupA` is the first condition written in `--contrast`. |
+| `groupX_CN_H1`, `groupX_CN_H2` | Mean copy number of each haplotype in the group. |
+| `groupX_priorH1`, `groupX_priorH2` | Mapping priors `r1` and `r2`. |
+| `groupX_totalH1/H2/NonHS`, `groupX_meanH1/H2/NonHS` | Reads per category, summed and averaged over the group's libraries. |
+| `groupX_alpha_mean` | Posterior mean of `alpha`. |
+| `groupX_theta_mean`, `_q025`, `_q975` | Per-copy H1 share, with its 95% credible interval. |
+| `groupX_thetaRaw_mean`, `_q025`, `_q975` | H1 share of the expression, not divided by copy number, with its 95% credible interval. |
+| `groupX_alphaAI_pvalue`, `groupX_thetaAI_pvalue` | Allelic imbalance within the group (`alpha≠1`, `theta≠0.5`). |
+| `delta_theta_mean`, `delta_thetaRaw_mean`, `delta_alpha_mean` | Differences between the groups, A minus B. |
+| `diffAI_pvalue` | Differential allelic imbalance between the groups, corrected by copy number. |
+| `rope_value` | Posterior probability that the groups differ by less than 0.15 in `theta`. |
+| `analysis_flag` | `Success`; `pvalue0` when every posterior draw put the same group ahead, so the p-value is below what the draws can resolve; `Skipped_Low_Counts`; or the error. |
 
 ## Citation
 

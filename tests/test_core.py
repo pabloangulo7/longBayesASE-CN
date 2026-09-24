@@ -20,8 +20,7 @@ def run_script(name: str, *args: object) -> None:
 
 def read_tsv(path: Path):
     with path.open() as handle:
-        rows = (line for line in handle if not line.startswith("#"))
-        return list(csv.DictReader(rows, delimiter="\t"))
+        return list(csv.DictReader(handle, delimiter="\t"))
 
 
 TRANSCRIPTS = ["T1_hap1", "T1_hap2", "T1B_hap1", "T1B_hap2", "T2_hap1", "T2_hap2"]
@@ -86,6 +85,31 @@ def test_rna_haplotypes_come_from_the_best_alignments(tmp_path: Path) -> None:
     assert run("both")["gene"]["antisense"] == "H2"
 
 
+def test_read_intervals_are_a_capped_sample_of_the_confined_reads(tmp_path: Path) -> None:
+    alignments = [(f"r{i}", "T1_hap1", 100, 0) for i in range(20)]
+    alignments += [("g2_read", "T2_hap1", 100, 0), ("two_genes", "T1_hap1", 100, 0), ("two_genes", "T2_hap2", 100, 256)]
+    bam = tmp_path / "reads.bam"
+    write_rna_bam(bam, alignments)
+    prefix = tmp_path / "S1"
+    run_script("count_rna_haplotypes.py", "--bam", bam, "--tx2gene", rna_tx2gene(tmp_path),
+               "--intervals-per-feature", 5, "--output-prefix", prefix)
+
+    def kept(level: str) -> dict[str, list[dict[str, str]]]:
+        with gzip.open(f"{prefix}.{level}_read_intervals.tsv.gz", "rt") as handle:
+            rows = list(csv.DictReader(handle, delimiter="\t"))
+        return {feature: [row for row in rows if row["ID"] == feature] for feature in {row["ID"] for row in rows}}
+
+    # Each feature keeps at most 5 of its reads; the two-gene read belongs to neither.
+    genes, transcripts = kept("gene"), kept("transcript")
+    assert sorted(genes) == ["G1", "G2"] and len(genes["G1"]) == 5
+    assert genes["G2"] == [{"ID": "G2", "transcript": "T2", "start": "0", "end": "50"}]
+    assert sorted(transcripts) == ["T1", "T2"] and len(transcripts["T1"]) == 5
+    # Without the option nothing is sampled.
+    run_script("count_rna_haplotypes.py", "--bam", bam, "--tx2gene", rna_tx2gene(tmp_path),
+               "--output-prefix", tmp_path / "plain")
+    assert not list(tmp_path.glob("plain.*_read_intervals.tsv.gz"))
+
+
 def test_rna_counting_rejects_a_read_split_into_two_blocks(tmp_path: Path) -> None:
     """Counting streams one read at a time, so a read must not reappear later."""
     bam = tmp_path / "sorted.bam"
@@ -114,13 +138,15 @@ def test_mapping_priors(tmp_path: Path) -> None:
     header = "ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\n"
     h1 = tmp_path / "h1.tsv"
     h2 = tmp_path / "h2.tsv"
-    h1.write_text(header + "G1\t80\t0\t0\t0\t20\t0\n")
-    h2.write_text(header + "G1\t0\t0\t75\t0\t25\t0\n")
+    h1.write_text(header + "G1\t80\t0\t0\t0\t20\t0\nGLOW\t3\t0\t0\t0\t1\t0\n")
+    h2.write_text(header + "G1\t0\t0\t75\t0\t25\t0\nGLOW\t0\t0\t3\t0\t1\t0\n")
     output = tmp_path / "priors.tsv"
-    run_script("build_priors.py", "--hap1-counts", h1, "--hap2-counts", h2, "--output", output)
-    row = read_tsv(output)[0]
-    assert float(row["H1_prior"]) == 0.8
-    assert float(row["H2_prior"]) == 0.75
+    run_script("build_priors.py", "--hap1-counts", h1, "--hap2-counts", h2, "--min-reads", 10, "--output", output)
+    rows = read_tsv(output)
+    # GLOW rests on 4 simulated reads per haplotype, under the minimum of 10.
+    assert [row["ID"] for row in rows] == ["G1"]
+    assert float(rows[0]["H1_prior"]) == 0.8
+    assert float(rows[0]["H2_prior"]) == 0.75
 
 
 def test_dna_copy_multimapping_classification(tmp_path: Path) -> None:
@@ -300,25 +326,22 @@ def test_copy_number_from_samplesheet_ploidy(tmp_path: Path) -> None:
     assert (rows["G9"]["CN_H1"], rows["G9"]["CN_H2"]) == ("1.0", "0.05")
 
 
-def test_exhaustive_transcript_tiling(tmp_path: Path) -> None:
-    fasta = tmp_path / "tx.fa"
-    fasta.write_text(">TX1_hap1\nAACCGGTTAA\n>TX2_hap1\nACGT\n")
-    output = tmp_path / "tiles.fastq.gz"
-    run_script(
-        "tile_transcripts.py",
-        "--transcriptome", fasta,
-        "--read-length", 6,
-        "--step", 4,
-        "--output", output,
-    )
+def test_simulated_reads_are_cut_at_the_read_intervals(tmp_path: Path) -> None:
+    """Each interval is cut from this haplotype's copy, clipped to its length."""
+    fasta = tmp_path / "hap1.fa"
+    fasta.write_text(">TX1_hap1\n" + "A" * 30 + "C" * 30 + "\n>TX2_hap1\n" + "G" * 40 + "\n>TX3_hap1\nTTTT\n")
+    intervals = tmp_path / "read_intervals.tsv"
+    intervals.write_text("sample\tID\ttranscript\tstart\tend\n"
+                         "S1\tG1\tTX1\t0\t30\nS2\tG1\tTX1\t25\t80\nS1\tG1\tTX1\t0\t30\n"
+                         "S1\tG2\tTX2\t0\t10\n")
+    output = tmp_path / "SIM_HAP1.fastq.gz"
+    run_script("simulate_prior_reads.py", "--intervals", intervals, "--transcriptome", fasta, "--output", output)
     with gzip.open(output, "rt") as handle:
         lines = handle.read().splitlines()
-    assert lines[0::4] == [
-        "@TX1_hap1__tile_1_6",
-        "@TX1_hap1__tile_5_10",
-        "@TX2_hap1__tile_1_4",
-    ]
-    assert lines[1::4] == ["AACCGG", "GGTTAA", "ACGT"]
+    # A repeated interval gives a second read; TX2's 10 bp interval is too short;
+    # TX3 has no interval.
+    assert lines[0::4] == ["@TX1_hap1__1_30__0", "@TX1_hap1__26_60__1", "@TX1_hap1__1_30__2"]
+    assert lines[1::4] == ["A" * 30, "A" * 5 + "C" * 30, "A" * 30]
 
 
 def test_chromosome_copy_number_and_haplotype_proportions(tmp_path: Path) -> None:
@@ -389,41 +412,6 @@ def test_chromosome_copy_number_and_haplotype_proportions(tmp_path: Path) -> Non
     gene_rows = {row["ID"]: row for row in read_tsv(gene_output)}
     assert abs(float(gene_rows["GCOPY"]["CN_H1"]) - 0.9) < 1e-12
     assert abs(float(gene_rows["GCOPY"]["CN_H2"]) - 0.1) < 1e-12
-
-
-def test_tiling_unweighted_is_unchanged(tmp_path: Path) -> None:
-    fasta = tmp_path / "tx.fa"
-    fasta.write_text(">TX1_hap1\n" + "ACGT" * 400 + "\n>TX2_hap1\n" + "ACGT" * 100 + "\n")
-    plain = tmp_path / "plain.fastq"
-    run_script("tile_transcripts.py", "--transcriptome", fasta, "--read-length", "500",
-               "--step", "250", "--output", plain)
-    empty = tmp_path / "usage.tsv"
-    empty.write_text("sample\tID\tnum_reads\n")
-    with_flag = tmp_path / "flagged.fastq"
-    run_script("tile_transcripts.py", "--transcriptome", fasta, "--read-length", "500",
-               "--step", "250", "--transcript-quant", empty, "--max-replicates", "3",
-               "--output", with_flag)
-    assert plain.read_text() == with_flag.read_text()
-
-
-def test_tiling_weights_by_transcript_quant(tmp_path: Path) -> None:
-    """Tiles are replicated by the Oarfish estimates summed over every sample."""
-    fasta = tmp_path / "tx.fa"
-    fasta.write_text(">TX1_hap1\n" + "ACGT" * 400 + "\n>TX2_hap1\n" + "ACGT" * 400 + "\n")
-    usage = tmp_path / "transcript_quant.tsv"
-    usage.write_text("sample\tID\tnum_reads\nS1\tTX1\t99.5\nS1\tTX2\t0.5\nS2\tTX2\t0.5\n")
-    tx2gene = tmp_path / "tx2gene.tsv"
-    tx2gene.write_text("transcript_id\tgene_id\tgene_name\nTX1\tG1\tG1\nTX2\tG1\tG1\n")
-    output = tmp_path / "weighted.fastq"
-    report = tmp_path / "weighting.txt"
-    run_script("tile_transcripts.py", "--transcriptome", fasta, "--read-length", "500",
-               "--step", "250", "--transcript-quant", usage, "--tx2gene", tx2gene,
-               "--max-replicates", "3", "--weighting-report", report, "--output", output)
-    names = [line[1:].strip() for line in output.read_text().splitlines() if line.startswith("@")]
-    dominant = sum(1 for name in names if name.startswith("TX1_hap1"))
-    minor = sum(1 for name in names if name.startswith("TX2_hap1"))
-    assert dominant == 3 * minor
-    assert report.read_text().startswith("expression")
 
 
 def test_ase_input_keeps_libraries_without_reads(tmp_path: Path) -> None:

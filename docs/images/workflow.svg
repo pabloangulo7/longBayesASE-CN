@@ -14,13 +14,13 @@
 <path d="M 1060,185 C 1127.5,185 1127.5,378 1195,378" fill="none" stroke="#2F6DB5" stroke-width="11" stroke-linecap="round"/>
 <path d="M 110,490 L 920,490" fill="none" stroke="#2E9E5B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M 920,490 C 1057.5,490 1057.5,400 1195,400" fill="none" stroke="#2E9E5B" stroke-width="11" stroke-linecap="round"/>
-<path d="M 560,490 C 620.0,490 620.0,580 680,580" fill="none" stroke="#17A2B8" stroke-width="11" stroke-linecap="round"/>
-<path d="M 680,580 L 860,580" fill="none" stroke="#17A2B8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="857" y="565" width="7" height="30" rx="2" fill="#1d1d1f"/>
+<path d="M 715,490 C 757.5,490 757.5,580 800,580" fill="none" stroke="#17A2B8" stroke-width="11" stroke-linecap="round"/>
+<path d="M 800,580 L 880,580" fill="none" stroke="#17A2B8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="877" y="565" width="7" height="30" rx="2" fill="#1d1d1f"/>
 <path d="M 560,680 L 1040,680" fill="none" stroke="#8250C4" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M 1040,680 C 1117.5,680 1117.5,422 1195,422" fill="none" stroke="#8250C4" stroke-width="11" stroke-linecap="round"/>
-<path d="M 680,598 L 680,662" fill="none" stroke="#17A2B8" stroke-width="5" stroke-dasharray="3 9" stroke-linecap="round"/>
-<text x="694" y="635.0" font-family="Helvetica, Arial, sans-serif" font-size="14" font-style="italic" fill="#1d1d1f">isoform weights</text>
+<path d="M 690,508 L 690,662" fill="none" stroke="#2E9E5B" stroke-width="5" stroke-dasharray="3 9" stroke-linecap="round"/>
+<text x="676" y="590.0" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="14" font-style="italic" fill="#1d1d1f">read intervals</text>
 <path d="M 1195,400 L 1320,400" fill="none" stroke="#D1495B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
 <rect x="1317" y="385" width="7" height="30" rx="2" fill="#1d1d1f"/>
 <path d="M 31.0,145.0 Q 31.0,139.0 37.0,139.0 L 91.0,139.0 L 109.0,157.0 L 109.0,225.0 Q 109.0,231.0 103.0,231.0 L 37.0,231.0 Q 31.0,231.0 31.0,225.0 Z" fill="#1d1d1f"/>
@@ -62,22 +62,22 @@
 <text x="1060" y="237" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">number</text>
 <circle cx="560" cy="490" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
 <text x="560" y="525" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">minimap2</text>
-<circle cx="720" cy="490" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
-<text x="720" y="450" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">best-score</text>
-<text x="720" y="467" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">haplotype</text>
+<circle cx="690" cy="490" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="690" y="450" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">best-score</text>
+<text x="690" y="467" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">haplotype</text>
 <circle cx="850" cy="490" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
 <text x="850" y="525" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">gene &amp;</text>
 <text x="850" y="542" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">transcript</text>
-<circle cx="680" cy="580" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
-<text x="680" y="557" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">oarfish</text>
-<circle cx="680" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
-<text x="680" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">tile H1 and H2</text>
-<text x="680" y="732" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">transcripts</text>
-<circle cx="800" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
-<text x="800" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">minimap2</text>
-<circle cx="910" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
-<text x="910" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">best-score</text>
-<text x="910" y="732" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">haplotype</text>
+<circle cx="800" cy="580" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="800" y="615" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">oarfish</text>
+<circle cx="690" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="690" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">cut H1 and H2 at</text>
+<text x="690" y="732" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">read intervals</text>
+<circle cx="815" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="815" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">minimap2</text>
+<circle cx="920" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
+<text x="920" y="715" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">best-score</text>
+<text x="920" y="732" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">haplotype</text>
 <circle cx="1020" cy="680" r="13" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
 <text x="1020" y="657" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1d1d1f">r1, r2</text>
 <rect x="1165" y="358" width="60" height="84" rx="30" fill="#fff" stroke="#1d1d1f" stroke-width="5"/>
@@ -92,13 +92,13 @@
 <path d="M 822.0,390.0 Q 822.0,384.0 828.0,384.0 L 860.0,384.0 L 878.0,402.0 L 878.0,444.0 Q 878.0,450.0 872.0,450.0 L 828.0,450.0 Q 822.0,450.0 822.0,444.0 Z" fill="#1d1d1f"/>
 <path d="M 860.0,384.0 L 860.0,402.0 L 878.0,402.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
 <text x="850" y="421" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
-<text x="888" y="404" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">gene_HS_counts</text>
-<text x="888" y="422" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">transcript_HS_counts</text>
-<path d="M 887.0,553.0 Q 887.0,547.0 893.0,547.0 L 925.0,547.0 L 943.0,565.0 L 943.0,607.0 Q 943.0,613.0 937.0,613.0 L 893.0,613.0 Q 887.0,613.0 887.0,607.0 Z" fill="#1d1d1f"/>
-<path d="M 925.0,547.0 L 925.0,565.0 L 943.0,565.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
-<text x="915" y="584" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
-<text x="953" y="575" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">gene_quant</text>
-<text x="953" y="593" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">transcript_quant</text>
+<text x="888" y="386" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">{gene,transcript}_HS_counts</text>
+<text x="888" y="404" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">{gene,transcript}_read_intervals</text>
+<path d="M 897.0,553.0 Q 897.0,547.0 903.0,547.0 L 935.0,547.0 L 953.0,565.0 L 953.0,607.0 Q 953.0,613.0 947.0,613.0 L 903.0,613.0 Q 897.0,613.0 897.0,607.0 Z" fill="#1d1d1f"/>
+<path d="M 935.0,547.0 L 935.0,565.0 L 953.0,565.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>
+<text x="925" y="584" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="800" fill="#fff">tsv</text>
+<text x="925" y="632" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">gene_quant</text>
+<text x="925" y="650" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1d1d1f">transcript_quant</text>
 <path d="M 1020,694 L 1020,714" stroke="#1d1d1f" stroke-width="4" stroke-linecap="round"/>
 <path d="M 992.0,720.0 Q 992.0,714.0 998.0,714.0 L 1030.0,714.0 L 1048.0,732.0 L 1048.0,774.0 Q 1048.0,780.0 1042.0,780.0 L 998.0,780.0 Q 992.0,780.0 992.0,774.0 Z" fill="#1d1d1f"/>
 <path d="M 1030.0,714.0 L 1030.0,732.0 L 1048.0,732.0" fill="#fff" stroke="#1d1d1f" stroke-width="3" stroke-linejoin="round"/>

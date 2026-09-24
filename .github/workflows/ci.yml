@@ -85,8 +85,9 @@ jobs:
           test -s full-test-results/rna/transcript_HS_counts.tsv
           test -s full-test-results/rna/gene_quant.tsv
           test -s full-test-results/rna/transcript_quant.tsv
+          test -s full-test-results/rna/gene_read_intervals.tsv.gz
+          test -s full-test-results/rna/transcript_read_intervals.tsv.gz
           test -s full-test-results/priors/mapping_priors.gene.tsv
-          test -s full-test-results/priors/mapping_priors.transcript.tsv
 
       - name: Several contrasts and transcript level
         run: |
@@ -99,6 +100,7 @@ jobs:
             --ase_shards 1 \
             --outdir multi-test-results
           test -s multi-test-results/diffase/diffASE_results.tsv
+          test -s multi-test-results/priors/mapping_priors.transcript.tsv
           test -s multi-test-results/diffase/shards/ANEUPLOID_VS_WT.shard_0001.tsv
           test -s multi-test-results/diffase/shards/WT_VS_ANEUPLOID.shard_0001.tsv
 
@@ -114,6 +116,21 @@ jobs:
             --ase_shards 1 \
             --outdir ploidy-test-results
           test -s ploidy-test-results/diffase/diffASE_results.tsv
+
+      - name: diffASE step simulating the priors from read intervals
+        run: |
+          nextflow run . -profile test -stub-run \
+            --step diffase \
+            --samplesheet tests/data/ploidy_samplesheet.tsv \
+            --hs_counts tests/data/combined_counts.tsv \
+            --read_intervals tests/data/gene_read_intervals.tsv \
+            --fasta tests/data/diploid.fa \
+            --gff3 tests/data/diploid.gff3 \
+            --contrast ANEUPLOID:WT \
+            --ase_shards 1 \
+            --outdir intervals-test-results
+          test -s intervals-test-results/priors/mapping_priors.gene.tsv
+          test -s intervals-test-results/diffase/diffASE_results.tsv
 
       - name: Unknown parameters are rejected
         run: |
@@ -167,8 +184,6 @@ jobs:
             --fasta tests/toy_full/diploid.fa \
             --gff3 tests/toy_full/diploid.gff3 \
             --contrast ANEUPLOID:WT \
-            --tiling_read_length 400 --tiling_step 200 \
-            --min_simulated_reads 1 \
             --ase_shards 2 --ase_iterations 4000 --ase_warmup 1000 \
             --outdir full-integration-results \
             -process.container longbayesase-cn:ci

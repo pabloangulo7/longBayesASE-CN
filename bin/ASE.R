@@ -102,7 +102,9 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     }
     datastan <- list(K = K, n_environment = n_groups, xenv = xenv, xs = xs, ys = ys, zs = zs, r = r, cnv1 = cnv1, cnv2 = cnv2,
       a_overdispersion = 2.01, b_overdispersion = 0.05)
-    starting_values <- function() {list(overdispersion = 0.01, bbeta = (datastan$xs + datastan$ys + datastan$zs) / (cnv1 + cnv2), alpha = rep(1.0, datastan$n_environment))}
+    # A library with no reads would start bbeta on its lower bound of 0, where
+    # Stan cannot initialise; it gets the same 0.1 floor as the empirical prior.
+    starting_values <- function() {list(overdispersion = 0.01, bbeta = pmax((datastan$xs + datastan$ys + datastan$zs) / (cnv1 + cnv2), 0.1), alpha = rep(1.0, datastan$n_environment))}
     total_xs_vec <- sapply(1:n_groups, function(i) sum(datastan$xs[datastan$xenv == i]))
     total_ys_vec <- sapply(1:n_groups, function(i) sum(datastan$ys[datastan$xenv == i]))
     total_zs_vec <- sapply(1:n_groups, function(i) sum(datastan$zs[datastan$xenv == i]))
@@ -133,9 +135,21 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     }else{theta <- matrix(NA_real_,n_groups,n_groups); alpha <- matrix(NA_real_,n_groups,n_groups); analysis_flag <- "Skipped_Low_Counts"}
     delta_threshold <- 0.15
     diff_distribution <- theta[, 1] - theta[, 2]
+    # theta is the H1 share per copy. For plotting, the H1 share of the gene's
+    # expression with the group's copy number put back: the allelic balance the
+    # libraries show, which sits at 0.5 only where the haplotypes are equally dosed.
+    cn_group <- t(sapply(seq_len(n_groups), function(i) c(mean(cnv1[xenv == i]), mean(cnv2[xenv == i]))))
+    theta_raw <- sapply(seq_len(n_groups), function(i) {
+      cn_group[i, 1] * theta[, i] / (cn_group[i, 1] * theta[, i] + cn_group[i, 2] * (1 - theta[, i]))
+    })
+    theta_raw <- matrix(theta_raw, ncol = n_groups)
     gene_res <- list(test = test_name,
       groupA = group_levels[1],
       groupB = group_levels[2],
+      groupA_CN_H1 = cn_group[1, 1],
+      groupA_CN_H2 = cn_group[1, 2],
+      groupB_CN_H1 = cn_group[2, 1],
+      groupB_CN_H2 = cn_group[2, 2],
       groupA_priorH1 = datastan$r[1,1],
       groupA_priorH2 = datastan$r[1,2],
       groupA_totalH1 = as.numeric(total_xs_vec[1]),
@@ -160,11 +174,18 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       groupB_theta_mean = mean(theta[, 2]),
       groupB_theta_q025 = as.numeric(quantile(theta[, 2], 0.025, na.rm=TRUE)),
       groupB_theta_q975 = as.numeric(quantile(theta[, 2], 0.975, na.rm=TRUE)),
+      groupA_thetaRaw_mean = mean(theta_raw[, 1]),
+      groupA_thetaRaw_q025 = as.numeric(quantile(theta_raw[, 1], 0.025, na.rm=TRUE)),
+      groupA_thetaRaw_q975 = as.numeric(quantile(theta_raw[, 1], 0.975, na.rm=TRUE)),
+      groupB_thetaRaw_mean = mean(theta_raw[, 2]),
+      groupB_thetaRaw_q025 = as.numeric(quantile(theta_raw[, 2], 0.025, na.rm=TRUE)),
+      groupB_thetaRaw_q975 = as.numeric(quantile(theta_raw[, 2], 0.975, na.rm=TRUE)),
       groupA_alphaAI_pvalue = 2 * min(mean(alpha[, 1] > 1), mean(alpha[, 1] < 1)),
       groupA_thetaAI_pvalue = 2 * min(mean(theta[, 1] > 0.5), mean(theta[, 1] < 0.5)),
       groupB_alphaAI_pvalue = 2 * min(mean(alpha[, 2] > 1), mean(alpha[, 2] < 1)),
       groupB_thetaAI_pvalue = 2 * min(mean(theta[, 2] > 0.5), mean(theta[, 2] < 0.5)),
       delta_theta_mean = mean(theta[, 1]) - mean(theta[, 2]),
+      delta_thetaRaw_mean = mean(theta_raw[, 1]) - mean(theta_raw[, 2]),
       delta_alpha_mean = mean(alpha[, 1]) - mean(alpha[, 2]),
       diffAI_pvalue = 2 * min(mean(alpha[,1] > alpha[,2]), mean(alpha[,1] < alpha[,2])),
       rope_value = mean(abs(diff_distribution) < delta_threshold),
@@ -173,12 +194,15 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     return(gene_res)
   }, error = function(e) {
     gene_res <- data.table(test=paste(group_levels, collapse = "_VS_"), groupA=group_levels[1], groupB=group_levels[2],
+      groupA_CN_H1=NA_real_, groupA_CN_H2=NA_real_, groupB_CN_H1=NA_real_, groupB_CN_H2=NA_real_,
       groupA_priorH1=NA_real_, groupA_priorH2=NA_real_, groupA_totalH1=NA_real_, groupA_totalH2=NA_real_, groupA_totalNonHS=NA_real_, groupA_meanH1=NA_real_, groupA_meanH2=NA_real_, groupA_meanNonHS=NA_real_,
       groupB_priorH1=NA_real_, groupB_priorH2=NA_real_, groupB_totalH1=NA_real_, groupB_totalH2=NA_real_, groupB_totalNonHS=NA_real_, groupB_meanH1=NA_real_, groupB_meanH2=NA_real_, groupB_meanNonHS=NA_real_,
       groupA_alpha_mean=NA_real_, groupA_theta_mean=NA_real_, groupA_theta_q025=NA_real_, groupA_theta_q975=NA_real_,
       groupB_alpha_mean=NA_real_, groupB_theta_mean=NA_real_, groupB_theta_q025=NA_real_, groupB_theta_q975=NA_real_,
+      groupA_thetaRaw_mean=NA_real_, groupA_thetaRaw_q025=NA_real_, groupA_thetaRaw_q975=NA_real_,
+      groupB_thetaRaw_mean=NA_real_, groupB_thetaRaw_q025=NA_real_, groupB_thetaRaw_q975=NA_real_,
       groupA_alphaAI_pvalue=NA_real_, groupA_thetaAI_pvalue=NA_real_, groupB_alphaAI_pvalue=NA_real_, groupB_thetaAI_pvalue=NA_real_,
-      delta_theta_mean=NA_real_, delta_alpha_mean=NA_real_, diffAI_pvalue=NA_real_, rope_value=NA_real_, analysis_flag=paste("Error:", e$message))
+      delta_theta_mean=NA_real_, delta_thetaRaw_mean=NA_real_, delta_alpha_mean=NA_real_, diffAI_pvalue=NA_real_, rope_value=NA_real_, analysis_flag=paste("Error:", e$message))
     return(gene_res)
   })
 }

@@ -20,15 +20,10 @@ def load_samples(path: str) -> dict[str, dict[str, str]]:
         return {row["sample"]: row for row in csv.DictReader(handle, delimiter="\t")}
 
 
-def uncommented(handle):
-    """Drop the provenance header written by build_priors.py."""
-    return (line for line in handle if not line.startswith("#"))
-
-
 def load_priors(path: str) -> dict[str, tuple[float, float]]:
     priors = {}
     with open(path) as handle:
-        reader = csv.DictReader(uncommented(handle), delimiter="\t")
+        reader = csv.DictReader(handle, delimiter="\t")
         if not {"ID", "H1_prior", "H2_prior"}.issubset(reader.fieldnames or []):
             raise ValueError("priors require columns: ID, H1_prior, H2_prior")
         for row in reader:

@@ -3,9 +3,9 @@
 include { VALIDATE_SAMPLESHEET; NORMALIZE_READS as NORMALIZE_DNA_READS; NORMALIZE_READS as NORMALIZE_RNA_READS; PREPARE_DNA_BAM; PREPARE_RNA_BAM } from './modules/local/inputs'
 include { PREPARE_REFERENCE; SPLIT_DIPLOID_GFF; LIFTOFF_ANNOTATE; BUILD_ANNOTATION_BUNDLE; BUILD_FEATURE_MAP } from './modules/local/annotation'
 include { DNA_ALIGN; DNA_MAX_SCORE; DNA_FEATURE_ASSIGN; DNA_SPLIT; DNA_COVERAGE; COMPUTE_COPY_NUMBER; COPY_NUMBER_FROM_PLOIDY } from './modules/local/dna'
-include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_HS_COUNTS as MERGE_GENE_HS_COUNTS; MERGE_HS_COUNTS as MERGE_TRANSCRIPT_HS_COUNTS; MERGE_OARFISH_QUANT } from './modules/local/rna'
+include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_HS_COUNTS as MERGE_GENE_HS_COUNTS; MERGE_HS_COUNTS as MERGE_TRANSCRIPT_HS_COUNTS; MERGE_READ_INTERVALS as MERGE_GENE_READ_INTERVALS; MERGE_READ_INTERVALS as MERGE_TRANSCRIPT_READ_INTERVALS; MERGE_OARFISH_QUANT } from './modules/local/rna'
 include { RNA_ALIGN as SIM_RNA_ALIGN; RNA_HAPLOTYPE_COUNT as SIM_RNA_HAPLOTYPE_COUNT } from './modules/local/rna'
-include { TILE_TRANSCRIPTS; BUILD_MAPPING_PRIORS } from './modules/local/simulation'
+include { SIMULATE_PRIOR_READS; BUILD_MAPPING_PRIORS } from './modules/local/simulation'
 include { PREPARE_ASE_INPUT; PREPARE_COMBINED_ASE_INPUT; COMPILE_ASE_MODEL; SPLIT_ASE_INPUT; RUN_ASE_SHARD; MERGE_ASE_RESULTS } from './modules/local/ase'
 
 
@@ -24,25 +24,9 @@ def requiredFile(value, label) {
     channel.value(file(value, checkIfExists: true))
 }
 
-def optionalFile(value, fallback) {
-    channel.value(file(value ?: fallback, checkIfExists: true))
-}
-
-def emptyTx2gene() { optionalFile(null, "${projectDir}/assets/empty_tx2gene.tsv") }
+def emptyTx2gene() { channel.value(file("${projectDir}/assets/empty_tx2gene.tsv", checkIfExists: true)) }
 
 def transcriptLevel() { params.level == 'transcript' }
-
-// Absent --transcript_quant resolves to a header-only table, so the tiler falls
-// back to one tile per transcript and reproduces the unweighted priors exactly.
-// At transcript level the weighting scales a transcript's numerator and
-// denominator by the same factor and cancels, so it is never applied there.
-def transcriptQuant() {
-    if (transcriptLevel() && params.transcript_quant) {
-        log.warn 'Ignoring --transcript_quant: transcript-level priors do not average over isoforms, so the weighting cancels out'
-    }
-    optionalFile(transcriptLevel() ? null : params.transcript_quant,
-                 "${projectDir}/assets/empty_transcript_quant.tsv")
-}
 
 // Pick one haplotype's annotation out of the Liftoff channel.
 def haplotypeAnnotation(channel, wanted) {
@@ -165,56 +149,60 @@ workflow RNA_WF {
             aligned: paths.size() == 1 && paths[0].name.toLowerCase().endsWith('.bam')
             raw: true
         }
+    // Each library keeps an equal share of the read intervals behind the priors.
+    def intervals_per_feature = input.raw.mix(input.aligned).count()
+        .map { libraries -> Math.ceil(params.prior_reads / libraries) as int }
     NORMALIZE_RNA_READS(input.raw)
     RNA_ALIGN(NORMALIZE_RNA_READS.out.reads, transcriptome)
     PREPARE_RNA_BAM(input.aligned.map { meta, paths -> tuple(meta, paths[0]) })
     def bam = RNA_ALIGN.out.bam.mix(PREPARE_RNA_BAM.out.bam)
-    // Haplotype-specific counts for the allele-specific model come from the
-    // alignments; expression for differential expression and isoform usage
-    // comes from Oarfish.
-    RNA_HAPLOTYPE_COUNT(bam, tx2gene, params.rna_strand)
+    // Haplotype-specific counts for the allele-specific model, and the read
+    // intervals for its priors, come from the alignments; expression for
+    // differential expression and isoform usage comes from Oarfish.
+    RNA_HAPLOTYPE_COUNT(bam, tx2gene, params.rna_strand, intervals_per_feature)
     MERGE_GENE_HS_COUNTS(RNA_HAPLOTYPE_COUNT.out.gene_hs_counts.map { _meta, path -> path }.collect(),
                          'gene_HS_counts.tsv')
     MERGE_TRANSCRIPT_HS_COUNTS(RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts.map { _meta, path -> path }.collect(),
                                'transcript_HS_counts.tsv')
+    MERGE_GENE_READ_INTERVALS(RNA_HAPLOTYPE_COUNT.out.gene_read_intervals.map { _meta, path -> path }.collect(),
+                              'gene')
+    MERGE_TRANSCRIPT_READ_INTERVALS(RNA_HAPLOTYPE_COUNT.out.transcript_read_intervals.map { _meta, path -> path }.collect(),
+                                    'transcript')
     OARFISH_QUANT(bam, params.oarfish_score, params.rna_strand, params.oarfish_bootstraps)
     MERGE_OARFISH_QUANT(OARFISH_QUANT.out.quant.map { _meta, path -> path }.collect(), tx2gene)
 
     emit:
-    gene_hs_counts       = MERGE_GENE_HS_COUNTS.out.counts
-    transcript_hs_counts = MERGE_TRANSCRIPT_HS_COUNTS.out.counts
-    transcript_quant     = MERGE_OARFISH_QUANT.out.transcripts
+    gene_hs_counts            = MERGE_GENE_HS_COUNTS.out.counts
+    transcript_hs_counts      = MERGE_TRANSCRIPT_HS_COUNTS.out.counts
+    gene_read_intervals       = MERGE_GENE_READ_INTERVALS.out.intervals
+    transcript_read_intervals = MERGE_TRANSCRIPT_READ_INTERVALS.out.intervals
 }
 
 
 workflow PRIORS_WF {
     take:
+    read_intervals
     transcriptome
     tx2gene
     hap1_tx
     hap2_tx
-    transcript_quant
 
     main:
-    def tiled = hap1_tx
-        .map { fasta -> tuple([sample: 'SIM_HAP1'], 'hap1', fasta) }
-        .mix(hap2_tx.map { fasta -> tuple([sample: 'SIM_HAP2'], 'hap2', fasta) })
-    TILE_TRANSCRIPTS(tiled, transcript_quant, tx2gene, params.tiling_read_length,
-                     params.tiling_step, params.tiling_max_replicates)
-    SIM_RNA_ALIGN(TILE_TRANSCRIPTS.out.reads, transcriptome)
-    // Tiles are cut from the transcripts in their own orientation.
-    SIM_RNA_HAPLOTYPE_COUNT(SIM_RNA_ALIGN.out.bam, tx2gene, 'fw')
-    BUILD_MAPPING_PRIORS(
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_hs_counts, 'SIM_HAP1'),
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.gene_hs_counts, 'SIM_HAP2'),
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts, 'SIM_HAP1'),
-        simulatedCounts(SIM_RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts, 'SIM_HAP2'),
-        TILE_TRANSCRIPTS.out.weighting.first(),
-        params.min_simulated_reads)
+    def haplotypes = hap1_tx
+        .map { fasta -> tuple([sample: 'SIM_HAP1'], fasta) }
+        .mix(hap2_tx.map { fasta -> tuple([sample: 'SIM_HAP2'], fasta) })
+    SIMULATE_PRIOR_READS(haplotypes, read_intervals)
+    SIM_RNA_ALIGN(SIMULATE_PRIOR_READS.out.reads, transcriptome)
+    // Simulated reads are cut from the transcripts in their own orientation.
+    SIM_RNA_HAPLOTYPE_COUNT(SIM_RNA_ALIGN.out.bam, tx2gene, 'fw', 0)
+    // The intervals were sampled for one level, so only that level's priors are built.
+    def counts = transcriptLevel() ? SIM_RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts
+                                   : SIM_RNA_HAPLOTYPE_COUNT.out.gene_hs_counts
+    BUILD_MAPPING_PRIORS(simulatedCounts(counts, 'SIM_HAP1'), simulatedCounts(counts, 'SIM_HAP2'),
+                         params.level, params.min_prior_reads)
 
     emit:
-    gene_priors       = BUILD_MAPPING_PRIORS.out.gene_priors
-    transcript_priors = BUILD_MAPPING_PRIORS.out.transcript_priors
+    priors = BUILD_MAPPING_PRIORS.out.priors
 }
 
 
@@ -294,9 +282,12 @@ workflow {
         def priors
         if (params.priors) priors = requiredFile(params.priors, 'priors')
         else {
-            PRIORS_WF(REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
-                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx, transcriptQuant())
-            priors = transcriptLevel() ? PRIORS_WF.out.transcript_priors : PRIORS_WF.out.gene_priors
+            if (!params.read_intervals) {
+                error "Provide --priors, or --read_intervals (rna/${params.level}_read_intervals.tsv.gz from the rna step) to simulate them"
+            }
+            PRIORS_WF(requiredFile(params.read_intervals, 'read_intervals'), REFERENCE_WF.out.transcriptome,
+                      REFERENCE_WF.out.tx2gene, REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx)
+            priors = PRIORS_WF.out.priors
         }
         if (params.counts) {
             PREPARE_COMBINED_ASE_INPUT(sheet, requiredFile(params.counts, 'counts'), priors)
@@ -332,14 +323,10 @@ workflow {
         def priors
         if (params.priors) priors = requiredFile(params.priors, 'priors')
         else {
-            // The Oarfish transcript table is already there, so the priors are
-            // weighted by expression without the user having to supply anything.
-            def weights = RNA_WF.out.transcript_quant
-            if (transcriptLevel()) weights = transcriptQuant()
-            else if (params.transcript_quant) weights = requiredFile(params.transcript_quant, 'transcript_quant')
-            PRIORS_WF(REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
-                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx, weights)
-            priors = transcriptLevel() ? PRIORS_WF.out.transcript_priors : PRIORS_WF.out.gene_priors
+            def read_intervals = transcriptLevel() ? RNA_WF.out.transcript_read_intervals : RNA_WF.out.gene_read_intervals
+            PRIORS_WF(read_intervals, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
+                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx)
+            priors = PRIORS_WF.out.priors
         }
         def hs_counts = transcriptLevel() ? RNA_WF.out.transcript_hs_counts : RNA_WF.out.gene_hs_counts
         PREPARE_ASE_INPUT(sheet, hs_counts, copy_number, priors, REFERENCE_WF.out.tx2gene)

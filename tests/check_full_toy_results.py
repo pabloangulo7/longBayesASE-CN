@@ -12,8 +12,7 @@ ROOT = Path(__file__).resolve().parents[1] / "full-integration-results"
 
 def read(path: Path):
     with path.open() as handle:
-        rows = (line for line in handle if not line.startswith("#"))
-        return list(csv.DictReader(rows, delimiter="\t"))
+        return list(csv.DictReader(handle, delimiter="\t"))
 
 
 qc = read(ROOT / "dna" / "copy_number.qc.tsv")
@@ -30,6 +29,7 @@ results = {row["ID"]: row for row in read(ROOT / "diffase" / "diffASE_results.ts
 required = {
     "groupA_alphaAI_pvalue", "groupA_thetaAI_pvalue",
     "groupB_alphaAI_pvalue", "groupB_thetaAI_pvalue",
+    "groupA_thetaRaw_mean", "groupB_thetaRaw_mean", "delta_thetaRaw_mean",
     "diffAI_pvalue", "rope_value", "analysis_flag",
 }
 assert required.issubset(results["GBASE"])
@@ -38,3 +38,10 @@ assert results["GGAIN"]["analysis_flag"] in {"Success", "pvalue0"}
 assert float(results["GBASE"]["diffAI_pvalue"]) < 0.1
 assert float(results["GGAIN"]["diffAI_pvalue"]) > 0.1
 assert float(results["GGAIN"]["rope_value"]) > 0.5
+# GGAIN follows its dosage: per copy it is balanced, while the libraries show
+# the 2:1 of the gained haplotype.
+gain = results["GGAIN"]
+assert abs(float(gain["groupA_CN_H1"]) - 2) < 0.1 and abs(float(gain["groupA_CN_H2"]) - 1) < 0.1
+assert abs(float(gain["groupA_theta_mean"]) - 0.5) < 0.1
+assert abs(float(gain["groupA_thetaRaw_mean"]) - 2 / 3) < 0.1
+assert abs(float(gain["groupB_thetaRaw_mean"]) - float(gain["groupB_theta_mean"])) < 1e-6
