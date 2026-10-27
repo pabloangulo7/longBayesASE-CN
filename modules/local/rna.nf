@@ -131,34 +131,6 @@ process MERGE_HS_COUNTS {
     """
 }
 
-process MERGE_READ_INTERVALS {
-    tag "${level}"
-    label 'process_low'
-
-    input:
-    path intervals
-    val level
-
-    output:
-    path "${level}_read_intervals.tsv.gz", emit: intervals
-
-    script:
-    """
-    {
-        printf 'sample\tID\ttranscript\tstart\tend\n'
-        for file in \$(ls ${intervals} | sort); do
-            sample=\${file%.${level}_read_intervals.tsv.gz}
-            zcat "\${file}" | tail -n +2 | awk -v sample="\${sample}" 'BEGIN { OFS = "\t" } { print sample, \$0 }'
-        done
-    } | gzip -c > ${level}_read_intervals.tsv.gz
-    """
-
-    stub:
-    """
-    printf 'sample\tID\ttranscript\tstart\tend\nSample1\tFEATURE1\tTX1\t0\t8\n' | gzip -c > ${level}_read_intervals.tsv.gz
-    """
-}
-
 process MERGE_OARFISH_QUANT {
     tag 'Oarfish expression tables'
     label 'process_low'

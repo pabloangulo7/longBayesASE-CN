@@ -57,17 +57,17 @@ jobs:
 
       # Stub runs check channel wiring only: every command is replaced by a
       # printf, so they must assert on the files that come out.
-      - name: diffASE step
+      - name: diffASE step from the ASE input
         run: |
           nextflow run . -profile test -stub-run \
             --step diffase \
-            --samplesheet tests/data/diffase_samplesheet.tsv \
-            --counts tests/data/combined_counts.tsv \
-            --priors tests/data/mapping_priors.gene.tsv \
+            --ase_input tests/data/ase_input.tsv \
             --contrast ANEUPLOID:WT \
             --ase_shards 2 --ase_iterations 20 --ase_warmup 10 \
             --outdir test-results
           test -s test-results/diffase/diffASE_results.tsv
+          test -s test-results/diffase/excluded_genes.tsv
+          test ! -e test-results/diffase/shards
 
       - name: Full pipeline
         run: |
@@ -85,9 +85,22 @@ jobs:
           test -s full-test-results/rna/transcript_HS_counts.tsv
           test -s full-test-results/rna/gene_quant.tsv
           test -s full-test-results/rna/transcript_quant.tsv
-          test -s full-test-results/rna/gene_read_intervals.tsv.gz
-          test -s full-test-results/rna/transcript_read_intervals.tsv.gz
-          test -s full-test-results/priors/mapping_priors.gene.tsv
+          test -s full-test-results/rna/mapping_priors.gene.tsv
+          test -s full-test-results/rna/ASE_input.gene.tsv
+          test -z "$(find full-test-results -name '*read_intervals*')"
+
+      - name: RNA step gives the ASE input
+        run: |
+          nextflow run . -profile test -stub-run \
+            --step rna \
+            --samplesheet tests/data/ploidy_samplesheet.tsv \
+            --fasta tests/data/diploid.fa \
+            --gff3 tests/data/diploid.gff3 \
+            --outdir rna-test-results
+          test -s rna-test-results/rna/ASE_input.gene.tsv
+          test -s rna-test-results/rna/mapping_priors.gene.tsv
+          test -s rna-test-results/dna/gene_copy_numbers.tsv
+          test ! -e rna-test-results/diffase
 
       - name: Several contrasts and transcript level
         run: |
@@ -100,37 +113,36 @@ jobs:
             --ase_shards 1 \
             --outdir multi-test-results
           test -s multi-test-results/diffase/diffASE_results.tsv
-          test -s multi-test-results/priors/mapping_priors.transcript.tsv
-          test -s multi-test-results/diffase/shards/ANEUPLOID_VS_WT.shard_0001.tsv
-          test -s multi-test-results/diffase/shards/WT_VS_ANEUPLOID.shard_0001.tsv
+          test -s multi-test-results/rna/mapping_priors.transcript.tsv
+          test -s multi-test-results/rna/ASE_input.transcript.tsv
 
       - name: Samplesheet ploidy needs only the GFF3
         run: |
           nextflow run . -profile test -stub-run \
             --step diffase \
             --samplesheet tests/data/ploidy_samplesheet.tsv \
-            --hs_counts tests/data/combined_counts.tsv \
+            --hs_counts tests/data/hs_counts.tsv \
             --priors tests/data/mapping_priors.gene.tsv \
             --gff3 tests/data/diploid.gff3 \
             --contrast ANEUPLOID:WT \
             --ase_shards 1 \
             --outdir ploidy-test-results
           test -s ploidy-test-results/diffase/diffASE_results.tsv
+          test -s ploidy-test-results/diffase/ASE_input.gene.tsv
 
       - name: diffASE step simulating the priors from the samplesheet RNA
         run: |
           nextflow run . -profile test -stub-run \
             --step diffase \
             --samplesheet tests/data/ploidy_samplesheet.tsv \
-            --hs_counts tests/data/combined_counts.tsv \
+            --hs_counts tests/data/hs_counts.tsv \
             --fasta tests/data/diploid.fa \
             --gff3 tests/data/diploid.gff3 \
             --contrast ANEUPLOID:WT \
             --ase_shards 1 \
             --outdir intervals-test-results
-          test -s intervals-test-results/priors/mapping_priors.gene.tsv
-          test -s intervals-test-results/rna/gene_read_intervals.tsv.gz
-          test ! -e intervals-test-results/rna/oarfish
+          test -s intervals-test-results/diffase/mapping_priors.gene.tsv
+          test ! -e intervals-test-results/rna
           test -s intervals-test-results/diffase/diffASE_results.tsv
 
       - name: Unknown parameters are rejected
@@ -166,9 +178,7 @@ jobs:
         run: |
           nextflow run . -profile test,docker -ansi-log false \
             --step diffase \
-            --samplesheet tests/data/diffase_samplesheet.tsv \
-            --counts tests/data/combined_counts.tsv \
-            --priors tests/data/mapping_priors.gene.tsv \
+            --ase_input tests/data/ase_input.tsv \
             --contrast ANEUPLOID:WT \
             --ase_shards 2 \
             --outdir test-results \

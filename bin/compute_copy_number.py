@@ -39,7 +39,7 @@ def main() -> None:
     parser.add_argument("--min-gene-depth", type=float, default=1.0,
                         help="total depth a gene needs before its own copy "
                              "number is estimated at gene resolution")
-    parser.add_argument("--gene-copies", choices=("all", "primary"), default="all",
+    parser.add_argument("--gene-copies", choices=("all", "primary"), default="primary",
                         help="sum the coverage of every copy Liftoff found, or "
                              "only the primary one")
     parser.add_argument("--cn-change-threshold", type=float, default=1.2,

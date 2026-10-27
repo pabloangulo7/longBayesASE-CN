@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Validate contrasts and balance genes across independent ASE shards.
+"""Filter the ASE input and balance its features across independent shards.
 
-Several contrasts can be requested at once. Each one is sharded on its own,
-so a shard always holds a single test and the model never sees two.
+Features whose mapping priors cannot inform the model are left out first:
+those whose reads rarely cover a heterozygous site on one of the haplotypes
+(min(r1, r2) <= --min-prior), and those whose simulated reads come out on the
+wrong haplotype more often than --max-misassignment, which the model has no
+term for. Each contrast is then sharded on its own, so a shard always holds a
+single test and the model never sees two.
 """
 
 from __future__ import annotations
@@ -10,12 +14,13 @@ from __future__ import annotations
 import argparse
 import csv
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 
 REQUIRED = {
-    "sample", "ID", "H1_counts", "H2_counts", "NonHS_counts",
+    "sample", "group", "ID", "H1_counts", "H2_counts", "NonHS_counts",
     "CN_H1", "CN_H2", "H1_prior", "H2_prior",
 }
 
@@ -44,13 +49,26 @@ def parse_contrasts(value: str):
     return contrasts
 
 
+def exclusion(row: dict[str, str], min_prior: float, max_misassignment: float) -> str:
+    """Why a feature cannot be fitted, or an empty string if it can."""
+    if min(float(row["H1_prior"]), float(row["H2_prior"])) <= min_prior:
+        return f"min(r1, r2) <= {min_prior}"
+    wrong = max(float(row.get("H1_misassignment") or 0), float(row.get("H2_misassignment") or 0))
+    if wrong > max_misassignment:
+        return f"misassignment > {max_misassignment}"
+    return ""
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
     parser.add_argument("--contrast", required=True,
                         help="condition_a:condition_b, or several separated by commas")
     parser.add_argument("--shards", type=int, required=True)
+    parser.add_argument("--min-prior", type=float, default=0.01)
+    parser.add_argument("--max-misassignment", type=float, default=0.05)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--excluded", required=True, help="table of the features left out and why")
     args = parser.parse_args()
     contrasts = parse_contrasts(args.contrast)
     output = Path(args.output_dir)
@@ -61,12 +79,21 @@ def main() -> None:
         if missing:
             raise ValueError(f"ASE input is missing columns: {', '.join(sorted(missing))}")
         source_fields = list(reader.fieldnames or [])
-        if "group" not in source_fields:
-            raise ValueError("ASE input requires a group column")
         rows = list(reader)
-    fieldnames = source_fields + ["test", "groupA", "groupB"]
+    excluded = {}
+    for row in rows:
+        reason = exclusion(row, args.min_prior, args.max_misassignment)
+        if reason:
+            excluded.setdefault(row["ID"], reason)
+    with open(args.excluded, "w") as handle:
+        handle.write("ID\treason\n")
+        handle.writelines(f"{feature}\t{reason}\n" for feature, reason in sorted(excluded.items()))
+    print(f"[split_ase_input] left out {len(excluded)} features; see {args.excluded}", file=sys.stderr)
     available = {row["group"] for row in rows}
-    manifest = []
+    rows = [row for row in rows if row["ID"] not in excluded]
+    if not rows:
+        raise ValueError("no feature passed the mapping-prior filters")
+    fieldnames = source_fields + ["test", "groupA", "groupB"]
     for contrast, group_a, group_b in contrasts:
         missing_groups = sorted({group_a, group_b} - available)
         if missing_groups:
@@ -98,11 +125,6 @@ def main() -> None:
                 writer.writeheader()
                 for gene in genes:
                     writer.writerows(by_gene[gene])
-            manifest.append((contrast, group_a, group_b, index, len(genes), loads[index - 1], path.name))
-    with open(output / "manifest.tsv", "w") as handle:
-        handle.write("contrast\tgroup_a\tgroup_b\tshard\tgenes\ttotal_counts\tfile\n")
-        for row in manifest:
-            handle.write("\t".join(map(str, row)) + "\n")
 
 
 if __name__ == "__main__":

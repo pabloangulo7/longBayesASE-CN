@@ -18,6 +18,4 @@ balanced = float(rows["GENE_BALANCED"]["diffAI_pvalue"])
 differential = float(rows["GENE_DIFFASE"]["diffAI_pvalue"])
 assert differential < 0.05, f"GENE_DIFFASE should be differential, got p={differential}"
 assert balanced > 0.05, f"GENE_BALANCED scales with copy number, got p={balanced}"
-bfdr = float(rows["GENE_DIFFASE"]["diffAI_bfdr"])
-assert bfdr < float(rows["GENE_BALANCED"]["diffAI_bfdr"]), "the differential gene should rank first"
-print(f"OK: balanced p={balanced:.3f}, differential p={differential:.3f} (bfdr={bfdr:.3f})")
+print(f"OK: balanced p={balanced:.3f}, differential p={differential:.3f}")

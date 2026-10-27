@@ -8,11 +8,10 @@ process PREPARE_ASE_INPUT {
     path copy_number
     path priors
     path tx2gene
-    val min_prior
-    val max_misassignment
+    val level
 
     output:
-    path 'ASE_input.tsv', emit: ase_input
+    path "ASE_input.${level}.tsv", emit: ase_input
 
     script:
     """
@@ -22,45 +21,12 @@ process PREPARE_ASE_INPUT {
         --copy-number ${copy_number} \
         --priors ${priors} \
         --tx2gene ${tx2gene} \
-        --min-prior ${min_prior} \
-        --max-misassignment ${max_misassignment} \
-        --output ASE_input.tsv
+        --output ASE_input.${level}.tsv
     """
 
     stub:
     """
-    printf 'sample\tdna_id\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2\tH1_prior\tH2_prior\nA1\tDNA1\tA\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\nB1\tDNA1\tB\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\n' > ASE_input.tsv
-    """
-}
-
-process PREPARE_COMBINED_ASE_INPUT {
-    tag 'ASE input'
-    label 'process_low'
-
-    input:
-    path samplesheet
-    path counts
-    path priors
-    val min_prior
-    val max_misassignment
-
-    output:
-    path 'ASE_input.tsv', emit: ase_input
-
-    script:
-    """
-    prepare_ase_input.py \
-        --samplesheet ${samplesheet} \
-        --counts ${counts} \
-        --priors ${priors} \
-        --min-prior ${min_prior} \
-        --max-misassignment ${max_misassignment} \
-        --output ASE_input.tsv
-    """
-
-    stub:
-    """
-    printf 'sample\tdna_id\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2\tH1_prior\tH2_prior\nA1\tDNA1\tA\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\nB1\tDNA1\tB\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\n' > ASE_input.tsv
+    printf 'sample\tdna_id\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\nA1\tDNA1\tA\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\t0\t0\nB1\tDNA1\tB\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\t0\t0\n' > ASE_input.${level}.tsv
     """
 }
 
@@ -72,10 +38,12 @@ process SPLIT_ASE_INPUT {
     path ase_input
     val contrast
     val shards
+    val min_prior
+    val max_misassignment
 
     output:
     path 'shards/*.shard_*.tsv', emit: shards
-    path 'shards/manifest.tsv', emit: manifest
+    path 'excluded_genes.tsv', emit: excluded
 
     script:
     """
@@ -83,7 +51,10 @@ process SPLIT_ASE_INPUT {
         --input ${ase_input} \
         --contrast '${contrast}' \
         --shards ${shards} \
-        --output-dir shards
+        --min-prior ${min_prior} \
+        --max-misassignment ${max_misassignment} \
+        --output-dir shards \
+        --excluded excluded_genes.tsv
     """
 
     stub:
@@ -91,14 +62,13 @@ process SPLIT_ASE_INPUT {
     # One shard per requested contrast, so a stub run still exercises the fan
     # out that several contrasts produce.
     mkdir -p shards
-    printf 'contrast\tgroup_a\tgroup_b\tshard\tgenes\ttotal_counts\tfile\n' > shards/manifest.tsv
+    printf 'ID\treason\n' > excluded_genes.tsv
     echo '${contrast}' | tr ',' '\n' | while IFS=: read -r group_a group_b; do
         [ -n "\${group_a}" ] || continue
         label="\${group_a}_VS_\${group_b}"
         printf 'sample\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2\tH1_prior\tH2_prior\ttest\tgroupA\tgroupB\n' > "shards/\${label}.shard_0001.tsv"
         printf 'A1\t%s\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\t%s\t%s\t%s\n' "\${group_a}" "\${label}" "\${group_a}" "\${group_b}" >> "shards/\${label}.shard_0001.tsv"
         printf 'B1\t%s\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\t%s\t%s\t%s\n' "\${group_b}" "\${label}" "\${group_a}" "\${group_b}" >> "shards/\${label}.shard_0001.tsv"
-        printf '%s\t%s\t%s\t1\t1\t50\t%s.shard_0001.tsv\n' "\${label}" "\${group_a}" "\${group_b}" "\${label}" >> shards/manifest.tsv
     done
     """
 }

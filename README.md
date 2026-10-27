@@ -4,16 +4,14 @@
 [![CI](https://github.com/pabloangulo7/longBayesASE-CN/actions/workflows/ci.yml/badge.svg)](https://github.com/pabloangulo7/longBayesASE-CN/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-`longBayesASE-CN` is a long-read-specific pipeline for analysing differential allele-specific expression between conditions while accounting for gene copy number and supporting personalized haplotype-resolved assemblies. The pipeline annotates and characterizes the personalized reference assembly, quantifies haplotype-specific RNA expression and DNA copy number, and integrates both measurements into an adaptation of the BayesASE model developed by León-Novelo et al., 2018. This approach identifies differential allele-specific expression events that cannot be explained solely by differences in gene dosage.
+`longBayesASE-CN` is a Nextflow pipeline for differential allele-specific expression (ASE) from long reads on a personalized haplotype-resolved assembly. It measures haplotype-specific RNA counts and DNA copy number and fits a copy-number-aware adaptation of BayesASE (León-Novelo et al., 2018), so that the differences it reports are those that gene dosage alone does not explain.
 
 The pipeline needs:
 
-- a haplotype-resolved FASTA (contigs must end in `_hap1` or `_hap2`);
-- a GFF3 annotation for the assembly, or source annotation files to perform a lift over;
-- sample info file;
+- a haplotype-resolved FASTA whose contigs end in `_hap1` or `_hap2`;
+- a GFF3 annotation of that assembly, or a source genome and annotation to lift over;
+- a samplesheet;
 - one or more contrasts, for example `Aneuploid:Control`.
-
-FASTQ and uBAM inputs are aligned by the pipeline. A DNA BAM already aligned to the diploid genome or an RNA BAM already aligned to the diploid transcriptome skips minimap2 automatically.
 
 ## Workflow
 
@@ -22,8 +20,6 @@ FASTQ and uBAM inputs are aligned by the pipeline. A DNA BAM already aligned to 
 ## Quick start
 
 Install Nextflow 24.10 or newer and use Docker, Singularity/Apptainer or Conda.
-
-If the diploid assembly is already annotated:
 
 ```bash
 nextflow run pabloangulo7/longBayesASE-CN \
@@ -35,30 +31,24 @@ nextflow run pabloangulo7/longBayesASE-CN \
   --outdir results
 ```
 
-If the assembly still needs to be annotated, replace `--gff3` with the source genome and annotation:
+If the assembly is not annotated yet, replace `--gff3` with `--source_fasta GRCh38.fa --source_gff3 gencode.gff3` to lift the annotation over with Liftoff.
 
-```bash
---source_fasta GRCh38.fa --source_gff3 gencode.gff3
-```
-
-The default `--step all` runs annotation preparation, DNA, RNA, mapping-prior simulation and diffASE. Nextflow resumes completed work with `-resume`.
+`--step all` (the default) runs every step. Add `-resume` to reuse finished work.
 
 ### Main parameters
 
 | Parameter | Meaning |
 |---|---|
-| `--samplesheet` | Sample metadata and DNA/RNA paths. |
-| `--fasta` | Personalized diploid assembly. Contigs must end in `_hap1` or `_hap2`. |
-| `--gff3` | Annotation already mapped to the personalized assembly. |
-| `--source_fasta`, `--source_gff3` | Reference genome and annotation used by Liftoff when `--gff3` is not available. |
-| `--contrast` | Conditions to compare, written as `conditionA:conditionB`. Several contrasts may be listed separated by commas. |
-| `--level` | `gene` (default) or `transcript`: the features the differential test is run on. |
-| `--outdir` | Output directory; default: `results`. |
-| `--step` | `all`, `annotation`, `dna`, `rna` or `diffase`; default: `all`. |
+| `--samplesheet` | Samples and their DNA/RNA files. |
+| `--fasta` | Haplotype-resolved assembly. |
+| `--gff3` | Annotation of the assembly. |
+| `--source_fasta`, `--source_gff3` | Genome and annotation lifted over by Liftoff when there is no `--gff3`. |
+| `--contrast` | Conditions to compare, `conditionA:conditionB`; several separated by commas. |
+| `--level` | `gene` (default) or `transcript`: the features that are tested. |
+| `--step` | `all` (default), `annotation`, `dna`, `rna` or `diffase`. |
+| `--outdir` | Output directory (default `results`). |
 
 ### Samplesheet
-
-The header must contain exactly these six columns:
 
 ```text
 sample	condition	dna_id	rna	dna	ploidy
@@ -67,237 +57,199 @@ Sample1_R2	Control	Sample1	/data/Sample1_R2.bam	/data/Sample1.genome.bam
 Sample2_R1	Aneuploid	Sample2	/data/Sample2_R1.fastq.gz	/data/Sample2.fastq.gz	chr7:2:1;chr22:1:2
 ```
 
-- `sample`: unique RNA library name.
-- `condition`: group used in `--contrast`.
-- `dna_id`: DNA specimen associated with the RNA library. Replicate RNA libraries may share it.
-- `rna`: cDNA FASTQ, uBAM or transcriptome-aligned BAM.
-- `dna`: gDNA FASTQ, uBAM or diploid-genome-aligned BAM. It may be empty when copy number is supplied separately or defined by `ploidy`.
-- `ploidy`: known exceptions to the default H1=1, H2=1, written as `chromosome:CN_H1:CN_H2` and separated by semicolons. Leave it empty for a normal diploid sample.
-
-Multiple raw read files for one library may be separated with semicolons. An aligned BAM must be a single file. `assets/samplesheet.example.tsv` is a filled-in copy to start from.
-
-### Main outputs
-
-| File | Contents |
+| Column | Content |
 |---|---|
-| `reference/` | Diploid GFF3, gene BED/SAF, transcriptomes and annotation summary. |
-| `dna/gene_copy_numbers.tsv` | `sample`, gene `ID`, chromosome, `CN_H1`, `CN_H2`. |
-| `rna/gene_HS_counts.tsv` | `sample`, gene `ID`, `H1`, `H2`, `NonHS`: haplotype-specific counts for the allele-specific model. |
-| `rna/transcript_HS_counts.tsv` | The same per transcript. |
-| `rna/gene_quant.tsv` | `sample`, gene `ID`, `num_reads`: Oarfish expression with both haplotypes summed, for differential expression. |
-| `rna/transcript_quant.tsv` | The same per transcript, for isoform usage. |
-| `rna/gene_read_intervals.tsv.gz` | Where the counted reads lie on their transcripts (`sample`, gene `ID`, `transcript`, `start`, `end`): a sample of up to `--prior_reads` per gene, from which the mapping priors are simulated. |
-| `rna/transcript_read_intervals.tsv.gz` | The same per transcript. |
-| `rna/counts/` | Per-library haplotype-specific counts with every read category, read groups and QC. |
-| `rna/oarfish/` | Oarfish output per library, including the unique/ambiguous read counts (`*.ambig_info.tsv`) and, with `--oarfish_bootstraps`, the inferential replicates (`*.infreps.pq`). |
-| `priors/mapping_priors.gene.tsv` | Per-gene H1 and H2 mapping probabilities, with the simulated reads behind each (`n_hap1`, `n_hap2`). With `--level transcript`, `mapping_priors.transcript.tsv` per transcript instead. |
-| `diffase/diffASE_results.tsv` | Allelic imbalance per condition, differential ASE, evidence values, Bayesian false sign rates, ROPE and fit status (columns described under [Result columns](#result-columns)). |
+| `sample` | Unique name of the RNA library. |
+| `condition` | Group used in `--contrast`. |
+| `dna_id` | DNA sample of the library; replicate libraries share it. |
+| `rna` | cDNA FASTQ, uBAM, or BAM aligned to the diploid transcriptome. |
+| `dna` | gDNA FASTQ, uBAM, or BAM aligned to the assembly. May be empty. |
+| `ploidy` | Known copy number, `chromosome:CN_H1:CN_H2` separated by semicolons. Empty for a diploid sample. |
 
-## Run one part of the pipeline
+FASTQ and uBAM files are aligned with minimap2; a BAM is used as it is. Several raw files of one library can be separated by semicolons. `assets/samplesheet.example.tsv` is a template.
+
+## Steps
 
 ### Annotation
-
-Build all reference files from an existing diploid GFF3:
 
 ```bash
 nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --step annotation --fasta assembly.fa --gff3 assembly.gff3 --outdir results
 ```
 
-If the diploid assembly is not annotated, use `--source_fasta` and `--source_gff3` instead of `--gff3` to lift the annotation over with Liftoff. The main output is `results/reference/`.
+| Output | Content |
+|---|---|
+| `reference/diploid.gff3` | Annotation of both haplotypes. |
+| `reference/diploid_transcriptome.fa`, `hap1_transcriptome.fa`, `hap2_transcriptome.fa` | Transcript sequences. |
+| `reference/genes.bed`, `genes.saf`, `tx2gene.tsv` | Gene coordinates and transcript-to-gene map. |
+| `reference/annotation_summary.tsv`, `transcriptome_summary.tsv` | Copies of every gene per haplotype, and transcripts per gene. |
+| `reference/liftoff/` | Liftoff output, when the annotation was lifted over. |
 
 ### DNA
 
 ```bash
 nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
-  --step dna --samplesheet samples.tsv --fasta assembly.fa --gff3 assembly.gff3 \
-  --outdir results
+  --step dna --samplesheet samples.tsv --fasta assembly.fa --gff3 assembly.gff3 --outdir results
 ```
 
-FASTQ/uBAM is aligned to `assembly.fa`; a `.bam` in the DNA column is used directly. The main output is `dna/gene_copy_numbers.tsv`.
-
-Two options shape the estimate:
-
-| Parameter | Options |
+| Output | Content |
 |---|---|
-| `--copy_number_level` | `chromosome` (default) gives every gene on a chromosome the same value, the median over its genes. `gene` estimates each gene from its own depth, which is noisier. |
-| `--gene_copies` | `all` (default) adds up the coverage of every copy Liftoff annotated for a gene. `primary` keeps only the canonical locus. |
-
-Only genes annotated as a single copy in both haplotypes are used for the diploid baseline and the per-chromosome medians.
+| `dna/gene_copy_numbers.tsv` | Copy number of each haplotype per sample and gene (`sample`, `ID`, `chromosome`, `CN_H1`, `CN_H2`). |
+| `dna/copy_number.qc.tsv` | Diploid baseline and per-chromosome estimates. |
+| `dna/counts/` | Reads per gene and read category, per sample. |
+| `dna/coverage/` | Haplotype-specific and NonHS depth per gene, per sample. |
 
 ### RNA
 
 ```bash
 nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
-  --step rna --samplesheet samples.tsv --fasta assembly.fa --gff3 assembly.gff3 \
-  --outdir results
+  --step rna --samplesheet samples.tsv --fasta assembly.fa --gff3 assembly.gff3 --outdir results
 ```
 
-FASTQ/uBAM is aligned to the generated diploid transcriptome; a `.bam` in the RNA column is used directly and must keep every alignment of a read together, as minimap2 writes it, not sorted by coordinate.
+| Output | Content |
+|---|---|
+| `rna/gene_HS_counts.tsv`, `rna/transcript_HS_counts.tsv` | H1, H2 and NonHS reads per library and feature. |
+| `rna/mapping_priors.gene.tsv` | Mapping priors of each feature (see [Mapping priors](#mapping-priors)). |
+| `rna/ASE_input.gene.tsv` | Input of the differential ASE step: counts, copy number and priors per library and feature. |
+| `rna/gene_quant.tsv`, `rna/transcript_quant.tsv` | Oarfish expression, both haplotypes summed, for differential expression and isoform usage. |
+| `rna/counts/` | Reads per category and QC, per library. |
+| `rna/oarfish/` | Oarfish output per library. |
 
-The alignments are used for:
-
-- **Haplotype-specific counts** (`rna/gene_HS_counts.tsv`, `rna/transcript_HS_counts.tsv`). A read is H1 or H2 when all the alignments that reach its best score fall on one haplotype, and NonHS when both haplotypes explain it equally well. Reads whose best alignments fall on several features are kept in the multigene and complex categories of `rna/counts/` and left out of the model.
-- **Read intervals** (`rna/gene_read_intervals.tsv.gz`, `rna/transcript_read_intervals.tsv.gz`): the start and end on its transcript of a random sample of the counted reads, up to `--prior_reads` per feature split equally among the libraries. Each level is sampled on its own, so a minor isoform of a highly expressed gene keeps its own intervals. The mapping priors are simulated from them.
-- **Expression** (`rna/gene_quant.tsv`, `rna/transcript_quant.tsv`) from Oarfish, with the two haplotypes of every transcript summed. For transcript-level differential expression or isoform usage, `--oarfish_bootstraps` adds inferential replicates that carry the quantification uncertainty into those analyses.
+With `--level transcript` the priors and the ASE input are written per transcript (`mapping_priors.transcript.tsv`, `ASE_input.transcript.tsv`). The copy number in the ASE input comes from `--copy_number` or from the samplesheet `ploidy` column (1:1 where neither gives it).
 
 ### Differential ASE
 
-Fits the model to the RNA counts, corrected by gene copy number and by the mapping priors. Each contrast compares two conditions as they appear in the samplesheet:
+From the ASE input of the RNA step:
 
 ```bash
 nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --step diffase \
-  --level gene \
+  --ase_input results/rna/ASE_input.gene.tsv \
+  --contrast Aneuploid:Control \
+  --outdir results
+```
+
+Or from the three tables, each of which can be left out:
+
+```bash
+nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
+  --step diffase \
   --samplesheet samples.tsv \
   --hs_counts results/rna/gene_HS_counts.tsv \
   --copy_number results/dna/gene_copy_numbers.tsv \
+  --priors results/rna/mapping_priors.gene.tsv \
   --fasta assembly.fa --gff3 assembly.gff3 \
   --contrast Aneuploid:Control \
-  --outdir diffase_results
+  --outdir results
 ```
 
-Results go to `diffase/diffASE_results.tsv`, where the `test` column names the comparison each row belongs to.
-
-#### Mapping priors
-
-The priors are the `r1` and `r2` of the model: the probability that a read from H1 (or H2) is recognised as haplotype-specific. It depends on whether the read covers a heterozygous site, so on the isoforms a gene uses and on where on them its reads start and end. Each read interval of the analysis level (`rna/gene_read_intervals.tsv.gz` or `rna/transcript_read_intervals.tsv.gz`) is cut from the H1 copy and from the H2 copy of its transcript, both sets are aligned to the diploid transcriptome with the same settings as the real reads and classified by the same rule: `r1` is the fraction of the reads simulated from H1 that come out as H1, and `r2` the same for H2. Only the positions of the real reads are used, never their alleles, and the intervals are pooled over all libraries, so every condition gets the same priors.
-
-| You supply | What happens |
+| Input | Without it |
 |---|---|
-| `--priors mapping_priors.gene.tsv` | Used as given. |
-| nothing | Simulated from the RNA libraries in the samplesheet `rna` column, which are aligned (or taken as BAM) and counted as in the RNA step, without Oarfish. Needs `--fasta` and `--gff3` to rebuild the transcriptome. Run with `-resume` and the same work directory as the RNA step, the alignment and counting are reused rather than repeated. |
+| `--hs_counts` | Required unless `--ase_input` is given. |
+| `--copy_number` | Taken from the samplesheet `ploidy` column, and 1:1 where that is empty (needs `--gff3`). |
+| `--priors` | Simulated from the RNA libraries of the samplesheet (needs `--fasta` and `--gff3`). With `-resume` and the work directory of the RNA step, the alignments are reused. |
 
-`--step all` simulates them from the libraries it has just counted. A feature needs at least `--min_prior_reads` (10) simulated reads per haplotype, one per real read interval, to get a prior; `n_hap1` and `n_hap2` in the table tell how many each prior rests on. Features below that have too few reads for the model to fit them anyway.
-
-Before the fit, genes are left out when their priors cannot inform the model: those with `min(r1, r2) <= --min_prior` (0.01), whose reads rarely cover a heterozygous site on one of the haplotypes, and those whose simulated reads come out on the wrong haplotype (`H1_misassignment` or `H2_misassignment`) more often than `--max_misassignment` (0.05), since the model has no term for misassignment. The log of the ASE input step reports how many genes each filter removed.
-
-#### Copy number
-
-| You supply | What happens |
+| Output | Content |
 |---|---|
-| `--copy_number gene_copy_numbers.tsv` | Used as given. It takes priority over the `ploidy` column. |
-| the samplesheet `ploidy` column | Expanded to every gene on the chromosomes listed there. |
-| neither | Every gene is treated as diploid, H1=1 and H2=1. |
+| `diffase/diffASE_results.tsv` | One row per feature and contrast (see [Result columns](#result-columns)). |
+| `diffase/excluded_genes.tsv` | Features left out before the fit, with the reason. |
+| `diffase/ASE_input.gene.tsv`, `diffase/mapping_priors.gene.tsv` | The model input and priors, when this step builds them. |
 
-#### Gene or transcript level
-
-The RNA step writes both tables and `--level` decides which one is tested, and which priors are simulated: `gene` (the default) or `transcript`. Run on its own, pass the counts of that level:
+The small table in `examples/toy_ase/` runs the step without sequencing data:
 
 ```bash
-  --level transcript \
-  --hs_counts results/rna/transcript_HS_counts.tsv
-```
-
-Copy number is always measured per gene and reaches transcripts through the transcript-to-gene map.
-
-A read compatible with several isoforms of one gene is left out at transcript level but kept at gene level, so transcript-level counts are lower.
-
-#### Counts and copy number in one table
-
-```text
-sample	ID	H1	H2	NonHS	CN_H1	CN_H2
-Sample1_R1	GENE1	30	28	12	1	1
-Sample2_R1	GENE1	54	25	15	2	1
-```
-
-Pass it with `--counts combined_counts.tsv` instead of `--hs_counts` and `--copy_number`. The small files in `examples/toy_ase/` run this way without any sequencing data:
-
-```bash
-nextflow run . -profile conda \
-  --step diffase \
-  --samplesheet examples/toy_ase/samplesheet.tsv \
-  --counts examples/toy_ase/combined_counts.tsv \
-  --priors examples/toy_ase/mapping_priors.gene.tsv \
-  --contrast Treatment:Control \
-  --outdir toy_results
+nextflow run . -profile conda --step diffase \
+  --ase_input examples/toy_ase/ASE_input.tsv --contrast Treatment:Control --outdir toy_results
 ```
 
 ## Optional parameters
 
-Most analyses only need the parameters above.
-
 | Parameter | Default | Purpose |
 |---|---:|---|
-| `--rna_strand` | `fw` | Orientation a cDNA read must have on its transcript: `fw` for oriented ONT cDNA, `rc` or `both`. Applies to the haplotype counts and to Oarfish. |
-| `--oarfish_score` | `0.99999` | Fraction of a read's best alignment score an alignment needs for Oarfish to consider it; the default keeps only the best-scoring alignments. Avoid exactly `1`: Oarfish compares the ratio in single precision, and for about one alignment score in eight the best alignment itself falls below 1, so those reads are silently dropped (about 11% of the reads in ONT cDNA libraries). |
-| `--oarfish_bootstraps` | `0` | Oarfish inferential replicates, for uncertainty-aware transcript-level analyses (for example `30`). |
-| `--copy_number_level` | `chromosome` | `chromosome` or `gene`. |
-| `--cn_change_threshold` | `1.2` | Fold change from the diploid baseline, in either direction, that makes a chromosome aneuploid. |
-| `--gene_copies` | `all` | `all` sums the coverage of every copy Liftoff found for a gene; `primary` keeps only the canonical locus. |
-| `--min_haplotype_depth` | `10` | Haplotype-specific depth a gene needs before its own H1/H2 split is trusted; below it the gene borrows its chromosome's proportion. |
-| `--min_gene_depth` | `1` | Total depth a gene needs before its own copy number is estimated with `--copy_number_level gene`. |
-| `--prior_reads` | `2000` | Read intervals kept per feature for the mapping priors, split equally among the libraries. |
-| `--min_prior_reads` | `10` | Simulated reads per haplotype a feature needs to get a prior. |
-| `--min_prior` | `0.01` | Genes with `min(r1, r2)` at or below this are not fitted. |
-| `--max_misassignment` | `0.05` | Genes whose simulated reads land on the wrong haplotype more often than this are not fitted. |
-| `--ase_shards` | `100` | Parallel groups of genes fitted by Stan, per contrast. |
-| `--ase_iterations` | `100000` | Stan iterations per gene. |
+| **DNA** | | |
+| `--copy_number_level` | `chromosome` | `chromosome` gives every gene the median of its chromosome; `gene` estimates each gene from its own depth (noisier). |
+| `--gene_copies` | `primary` | `primary` uses only the canonical locus of a gene; `all` adds the depth of every copy Liftoff annotated. |
+| `--cn_change_threshold` | `1.2` | Fold change from the diploid baseline, up or down, that marks a chromosome as gained or lost. |
+| `--min_haplotype_depth` | `10` | Minimum haplotype-specific depth of a gene to split its copy number between H1 and H2 from its own reads; below it, the gene takes the H1/H2 proportion of its chromosome. |
+| `--min_gene_depth` | `1` | Minimum total depth of a gene to estimate its own copy number with `--copy_number_level gene`. |
+| **RNA** | | |
+| `--rna_strand` | `fw` | Orientation of the reads on their transcript: `fw` for oriented ONT cDNA, `rc` or `both`. |
+| `--oarfish_score` | `0.99999` | Fraction of the best alignment score an alignment needs to be used by Oarfish. Do not use exactly `1`: rounding then drops about 11% of the reads. |
+| `--oarfish_bootstraps` | `0` | Oarfish inferential replicates, for uncertainty-aware transcript analyses. |
+| `--prior_reads` | `2000` | Reads per feature, split among the libraries, whose positions are used to simulate the priors. |
+| `--min_prior_reads` | `10` | Minimum simulated reads per haplotype for a feature to get a prior. |
+| **diffASE** | | |
+| `--min_prior` | `0.01` | Features with `min(r1, r2)` at or below this are not fitted. |
+| `--max_misassignment` | `0.05` | Features whose simulated reads go to the wrong haplotype more often than this are not fitted. |
+| `--ase_shards` | `100` | Groups of features fitted in parallel, per contrast. |
+| `--ase_iterations` | `100000` | Stan iterations per feature. |
 | `--ase_warmup` | `10000` | Stan warmup iterations. |
-| `--seed` | `1701` | Random seed for the Stan sampler. |
-| `--max_cpus` | `16` | Maximum CPUs assigned to one process. |
-| `--max_memory` | `120.GB` | Maximum memory assigned to one process. |
-| `--max_time` | `72.h` | Maximum walltime assigned to one process. |
+| `--seed` | `1701` | Stan random seed. |
+| **Resources** | | |
+| `--max_cpus`, `--max_memory`, `--max_time` | `16`, `120.GB`, `72.h` | Upper limits for one process. |
 
-For a Slurm cluster, add `-profile singularity,slurm`. Resource requests can be changed in a small Nextflow config without modifying the pipeline.
+For a Slurm cluster add `-profile singularity,slurm`.
 
-## Differential ASE model
+## Method
 
-For each condition, the copy-number-aware model describes the expected counts as:
+### Haplotype-specific counts
+
+A read is H1 or H2 when all its best-scoring alignments fall on one haplotype, and NonHS when both haplotypes explain it equally well. Reads whose best alignments fall on several features are left out of the model. A read compatible with several isoforms of a gene counts at gene level but not at transcript level.
+
+### Copy number
+
+DNA reads are classified in the same way. Only genes with a single annotated copy per haplotype set the diploid baseline and the chromosome medians. The H1/H2 split of a gene comes from its haplotype-specific depth. At transcript level, every transcript takes the copy number of its gene.
+
+### Mapping priors
+
+`r1` and `r2` are the probabilities that a read from H1, or from H2, is recognised as haplotype-specific. They depend on whether the read covers a heterozygous site, so on the isoforms and read positions of each feature. For a sample of the real reads, the same interval is cut from the H1 and the H2 copy of its transcript, which replicates the read coverage of each feature on both haplotypes. These simulated reads are aligned and classified like the real ones: `r1` is the fraction of H1 reads called H1, and `r2` the same for H2. The reads called on the wrong haplotype give `H1_misassignment` and `H2_misassignment`. Only read positions are used, pooled over the libraries, so all conditions share the same priors.
+
+### Model
+
+For each feature and condition:
 
 ```text
-H1:     CN_H1 × (1/alpha) × r1 × beta
-H2:     CN_H2 × alpha     × r2 × beta
-NonHS: [CN_H1 × (1-r1)/alpha + CN_H2 × (1-r2) × alpha] × beta
-theta:  1 / (alpha² + 1)
-```
-
-`CN_H1` and `CN_H2` correct for haplotype dosage. `r1` and `r2` are the simulated mapping probabilities: their ratio corrects mapping bias between the haplotypes, and their level sets how many reads the model expects in NonHS. `alpha=1` and `theta=0.5` indicate balanced per-copy expression, so a gene whose expression follows its dosage has `theta=0.5` in every condition and is not differential.
-
-`thetaRaw` puts the group's copy number back into `theta`:
-
-```text
+E[H1]    = CN_H1 × r1 × beta / alpha
+E[H2]    = CN_H2 × r2 × beta × alpha
+E[NonHS] = [CN_H1 × (1 - r1) / alpha + CN_H2 × (1 - r2) × alpha] × beta
+theta    = 1 / (1 + alpha²)
 thetaRaw = CN_H1 × theta / (CN_H1 × theta + CN_H2 × (1 - theta))
 ```
 
-It is the H1 share of the gene's expression, the allelic balance the libraries show. It is computed from the same posterior draws, so no second model is fitted, and it equals `theta` where both haplotypes have one copy. On a gained chromosome with `CN_H1=2`, a gene that follows its dosage has `theta=0.5` and `thetaRaw=2/3`; a gene with `delta_theta` significant against the gained haplotype and a `thetaRaw` close to that of the control group has had its extra copy compensated on that allele.
+`theta` is the H1 share of expression per copy: 0.5 when expression follows dosage. `thetaRaw` is the H1 share of total expression, as seen in the reads. On a chromosome with `CN_H1=2`, a gene that follows its dosage has `theta=0.5` and `thetaRaw=2/3`.
 
-### Testing and false discovery rate
+The priors are those of BayesASE: `alpha ~ lognormal(0, 0.5)`, a gamma hierarchy for library size `beta`, and inverse-gamma(2.01, 0.05) overdispersion. Each feature is fitted on its own with Stan (one chain). Where a group has no read in a category, one read is added to its best-covered library, as in BayesASE, to keep `alpha` finite.
 
-Each gene is fitted on its own with Stan (one chain, `--ase_iterations` minus `--ase_warmup` draws kept), with the priors of BayesASE: `alpha ~ lognormal(0, 0.5)`, a gamma hierarchy for the library sizes `beta` and an inverse-gamma(2.01, 0.05) overdispersion shared by the three read categories. Where a whole group has no read in a category, one read is added to its best-covered library, as in BayesASE; this keeps `alpha` finite and pulls the gene towards balance.
+Before the fit, features are left out (and listed in `excluded_genes.tsv`) when `min(r1, r2) <= --min_prior`, because few of their reads cover a heterozygous site, or when either misassignment rate is above `--max_misassignment`, because the model does not include misassignment.
 
-The test statistic is BayesASE's evidence value, the two-sided posterior tail probability
+### Tests
+
+`diffAI_pvalue` is the evidence value of BayesASE:
 
 ```text
 diffAI_pvalue = 2 × min{ P(alpha_A > alpha_B), P(alpha_A < alpha_B) }
 ```
 
-that is, the smallest `ev` for which the `1 - ev` central credible interval of `alpha_A - alpha_B` excludes 0. When every draw falls on the same side it is only known to be below the resolution of the draws, and is reported as `1/draws` with the flag `pvalue0`.
+It is the smallest level at which the central credible interval of `alpha_A - alpha_B` excludes 0. It is computed per feature, as in BayesASE, without multiple-testing correction. When every draw falls on one side, it is reported as `1/draws` with the flag `pvalue0`.
 
-Half of it is the local false sign rate (`diffAI_lfsr`): the posterior probability that the direction of the difference is wrong. Within each test, the genes are ranked by it and `diffAI_bfdr` is the mean lfsr of all the genes at least as significant, the expected proportion of wrong directions in that list (Bayesian false sign rate).
-
-The pipeline reports these values and does not filter genes on them; which genes to call is left to the downstream analysis. Both rates concern the direction of the difference, not its size: where many genes differ slightly between the groups, as between independent clones, a list cut on `diffAI_bfdr` also takes in those small differences, so it is best combined with an effect-size criterion such as `delta_theta_mean`.
-
-`rope_value` describes the genes that are not differential: the posterior probability that `theta` differs by less than 0.15 between the groups.
+`rope_value` is the posterior probability that `|theta_A - theta_B|` is smaller than the effect that full dosage compensation would have. That effect is computed per feature and per draw: it is the change in `theta` if group A kept the `thetaRaw` of group B despite its own copy number. When both groups have the same H1:H2 ratio, the effect of a 2:1 gain (averaged over gains of H1 and of H2) is used instead. A high `rope_value` therefore means that any difference between the groups is smaller than dosage compensation would produce.
 
 ### Result columns
 
 | Columns | Meaning |
 |---|---|
-| `test`, `groupA`, `groupB` | The contrast; `groupA` is the first condition written in `--contrast`. |
+| `test`, `groupA`, `groupB` | Contrast; `groupA` is the first condition in `--contrast`. |
 | `groupX_CN_H1`, `groupX_CN_H2` | Mean copy number of each haplotype in the group. |
-| `groupX_priorH1`, `groupX_priorH2` | Mapping priors `r1` and `r2`. |
-| `groupX_totalH1/H2/NonHS`, `groupX_meanH1/H2/NonHS` | Reads per category, summed and averaged over the group's libraries. |
+| `groupX_priorH1`, `groupX_priorH2` | Mapping priors `r1`, `r2`. |
+| `groupX_totalH1/H2/NonHS`, `groupX_meanH1/H2/NonHS` | Reads per category, summed and averaged over libraries. |
 | `groupX_alpha_mean` | Posterior mean of `alpha`. |
-| `groupX_theta_mean`, `_q025`, `_q975` | Per-copy H1 share, with its 95% credible interval. |
-| `groupX_thetaRaw_mean`, `_q025`, `_q975` | H1 share of the expression, not divided by copy number, with its 95% credible interval. |
-| `groupX_alphaAI_pvalue`, `groupX_thetaAI_pvalue` | Evidence value for allelic imbalance within the group (`alpha≠1`, `theta≠0.5`). |
-| `delta_theta_mean`, `delta_thetaRaw_mean`, `delta_alpha_mean` | Differences between the groups, A minus B. |
-| `diffAI_pvalue` | Evidence value for differential allelic imbalance between the groups, corrected by copy number. |
-| `diffAI_lfsr` | Local false sign rate, `diffAI_pvalue / 2`. |
-| `diffAI_bfdr` | Bayesian false sign rate of the list of genes at least as significant, within the test. |
-| `rope_value` | Posterior probability that the groups differ by less than 0.15 in `theta`. |
-| `analysis_flag` | `Success`; `pvalue0` when every posterior draw put the same group ahead, so `diffAI_pvalue` is reported as its upper bound `1/draws`; `Skipped_Low_Counts`; or the error. |
+| `groupX_theta_mean`, `_q025`, `_q975` | `theta` with its 95% credible interval. |
+| `groupX_thetaRaw_mean`, `_q025`, `_q975` | `thetaRaw` with its 95% credible interval. |
+| `groupX_alphaAI_pvalue`, `groupX_thetaAI_pvalue` | Evidence of allelic imbalance within the group (`alpha≠1`). |
+| `delta_theta_mean`, `delta_thetaRaw_mean`, `delta_alpha_mean` | Differences between groups, A minus B. |
+| `diffAI_pvalue` | Evidence of differential allelic imbalance, corrected by copy number. |
+| `rope_value` | Probability that the difference in `theta` is smaller than full dosage compensation. |
+| `analysis_flag` | `Success`, `pvalue0`, `Skipped_Low_Counts`, or the error. |
 
 ## Citation
 
@@ -306,7 +258,7 @@ The differential ASE model is adapted from:
 - León-Novelo L. et al. (2018), *Direct Testing for Allele-Specific Expression Differences Between Conditions*, G3. [doi:10.1534/g3.117.300139](https://doi.org/10.1534/g3.117.300139)
 - Miller B.R. et al. (2021), *Testcrosses are an efficient strategy for identifying cis-regulatory variation: Bayesian analysis of allele-specific expression (BayesASE)*, G3. [doi:10.1093/g3journal/jkab096](https://doi.org/10.1093/g3journal/jkab096)
 
-Also cite the sequencing and analysis tools used in your run, including Liftoff, gffread, minimap2, samtools, bedtools, featureCounts, Oarfish, Stan/RStan and Nextflow.
+Also cite the tools used in your run: Liftoff, gffread, minimap2, samtools, bedtools, featureCounts, Oarfish, Stan/RStan and Nextflow.
 
 ## License
 

@@ -23,28 +23,29 @@ from common import fasta_records, open_text, split_haplotype
 MIN_LENGTH = 20
 
 
-def load_intervals(path: str) -> dict[str, array]:
-    """Start and end of every interval, flattened per transcript."""
+def load_intervals(paths: list[str]) -> dict[str, array]:
+    """Start and end of every interval of every library, flattened per transcript."""
     by_transcript: dict[str, array] = defaultdict(lambda: array("i"))
-    with open_text(path) as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        if not {"transcript", "start", "end"}.issubset(reader.fieldnames or []):
-            raise ValueError("read intervals require columns: transcript, start, end")
-        for row in reader:
-            by_transcript[row["transcript"]].extend((int(row["start"]), int(row["end"])))
+    for path in paths:
+        with open_text(path) as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            if not {"transcript", "start", "end"}.issubset(reader.fieldnames or []):
+                raise ValueError(f"{path}: read intervals require columns: transcript, start, end")
+            for row in reader:
+                by_transcript[row["transcript"]].extend((int(row["start"]), int(row["end"])))
     return by_transcript
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--intervals", required=True, help="read intervals from the RNA libraries")
+    parser.add_argument("--intervals", nargs="+", required=True, help="read intervals of the RNA libraries")
     parser.add_argument("--transcriptome", required=True, help="transcripts of one haplotype, named <transcript>_hap1|2")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
     intervals = load_intervals(args.intervals)
     if not intervals:
-        raise ValueError(f"{args.intervals} holds no read intervals")
+        raise ValueError("the RNA libraries gave no read intervals")
     opener = gzip.open if args.output.endswith(".gz") else open
     written = skipped = 0
     with opener(args.output, "wt") as output:

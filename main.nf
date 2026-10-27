@@ -3,10 +3,10 @@
 include { VALIDATE_SAMPLESHEET; NORMALIZE_READS as NORMALIZE_DNA_READS; NORMALIZE_READS as NORMALIZE_RNA_READS; PREPARE_DNA_BAM; PREPARE_RNA_BAM } from './modules/local/inputs'
 include { PREPARE_REFERENCE; SPLIT_DIPLOID_GFF; LIFTOFF_ANNOTATE; BUILD_ANNOTATION_BUNDLE; BUILD_FEATURE_MAP } from './modules/local/annotation'
 include { DNA_ALIGN; DNA_MAX_SCORE; DNA_FEATURE_ASSIGN; DNA_SPLIT; DNA_COVERAGE; COMPUTE_COPY_NUMBER; COPY_NUMBER_FROM_PLOIDY } from './modules/local/dna'
-include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_HS_COUNTS as MERGE_GENE_HS_COUNTS; MERGE_HS_COUNTS as MERGE_TRANSCRIPT_HS_COUNTS; MERGE_READ_INTERVALS as MERGE_GENE_READ_INTERVALS; MERGE_READ_INTERVALS as MERGE_TRANSCRIPT_READ_INTERVALS; MERGE_OARFISH_QUANT } from './modules/local/rna'
+include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_HS_COUNTS as MERGE_GENE_HS_COUNTS; MERGE_HS_COUNTS as MERGE_TRANSCRIPT_HS_COUNTS; MERGE_OARFISH_QUANT } from './modules/local/rna'
 include { RNA_ALIGN as SIM_RNA_ALIGN; RNA_HAPLOTYPE_COUNT as SIM_RNA_HAPLOTYPE_COUNT } from './modules/local/rna'
 include { SIMULATE_PRIOR_READS; BUILD_MAPPING_PRIORS } from './modules/local/simulation'
-include { PREPARE_ASE_INPUT; PREPARE_COMBINED_ASE_INPUT; COMPILE_ASE_MODEL; SPLIT_ASE_INPUT; RUN_ASE_SHARD; MERGE_ASE_RESULTS } from './modules/local/ase'
+include { PREPARE_ASE_INPUT; COMPILE_ASE_MODEL; SPLIT_ASE_INPUT; RUN_ASE_SHARD; MERGE_ASE_RESULTS } from './modules/local/ase'
 
 
 def validateParams() {
@@ -132,10 +132,10 @@ workflow DNA_WF {
 }
 
 
-// Alignment, haplotype-specific counts and read intervals: everything the
-// allele-specific model and its priors need from the RNA libraries. The rna,
-// all and diffase steps call it under the same name, so -resume reuses the
-// counts of an earlier rna run instead of counting the libraries again.
+// Alignment and haplotype-specific counts of the RNA libraries, with the read
+// intervals the mapping priors are simulated from. The rna, all and diffase
+// steps call it under the same name, so -resume reuses the counts of an earlier
+// run instead of counting the libraries again.
 workflow RNA_WF {
     take:
     samplesheet
@@ -165,17 +165,14 @@ workflow RNA_WF {
                          'gene_HS_counts.tsv')
     MERGE_TRANSCRIPT_HS_COUNTS(RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts.map { _meta, path -> path }.collect(),
                                'transcript_HS_counts.tsv')
-    MERGE_GENE_READ_INTERVALS(RNA_HAPLOTYPE_COUNT.out.gene_read_intervals.map { _meta, path -> path }.collect(),
-                              'gene')
-    MERGE_TRANSCRIPT_READ_INTERVALS(RNA_HAPLOTYPE_COUNT.out.transcript_read_intervals.map { _meta, path -> path }.collect(),
-                                    'transcript')
+    // The priors are simulated for the analysis level only.
+    def level_intervals = transcriptLevel() ? RNA_HAPLOTYPE_COUNT.out.transcript_read_intervals
+                                            : RNA_HAPLOTYPE_COUNT.out.gene_read_intervals
 
     emit:
-    bam                       = alignments
-    gene_hs_counts            = MERGE_GENE_HS_COUNTS.out.counts
-    transcript_hs_counts      = MERGE_TRANSCRIPT_HS_COUNTS.out.counts
-    gene_read_intervals       = MERGE_GENE_READ_INTERVALS.out.intervals
-    transcript_read_intervals = MERGE_TRANSCRIPT_READ_INTERVALS.out.intervals
+    bam            = alignments
+    hs_counts      = transcriptLevel() ? MERGE_TRANSCRIPT_HS_COUNTS.out.counts : MERGE_GENE_HS_COUNTS.out.counts
+    read_intervals = level_intervals.map { _meta, path -> path }.collect()
 }
 
 
@@ -192,6 +189,9 @@ workflow EXPRESSION_WF {
 }
 
 
+// Reads simulated from each haplotype where the real reads lie, aligned and
+// classified like the real ones: the fraction recognised as haplotype-specific
+// is the mapping prior of every feature.
 workflow PRIORS_WF {
     take:
     read_intervals
@@ -208,7 +208,6 @@ workflow PRIORS_WF {
     SIM_RNA_ALIGN(SIMULATE_PRIOR_READS.out.reads, transcriptome)
     // Simulated reads are cut from the transcripts in their own orientation.
     SIM_RNA_HAPLOTYPE_COUNT(SIM_RNA_ALIGN.out.bam, tx2gene, 'fw', 0)
-    // The intervals were sampled for one level, so only that level's priors are built.
     def counts = transcriptLevel() ? SIM_RNA_HAPLOTYPE_COUNT.out.transcript_hs_counts
                                    : SIM_RNA_HAPLOTYPE_COUNT.out.gene_hs_counts
     BUILD_MAPPING_PRIORS(simulatedCounts(counts, 'SIM_HAP1'), simulatedCounts(counts, 'SIM_HAP2'),
@@ -225,13 +224,10 @@ workflow DIFFASE_WF {
 
     main:
     COMPILE_ASE_MODEL(channel.value(file("${projectDir}/bin/ASE_model.stan", checkIfExists: true)))
-    SPLIT_ASE_INPUT(ase_input, params.contrast, params.ase_shards)
+    SPLIT_ASE_INPUT(ase_input, params.contrast, params.ase_shards, params.min_prior, params.max_misassignment)
     RUN_ASE_SHARD(SPLIT_ASE_INPUT.out.shards.flatten(), COMPILE_ASE_MODEL.out.model,
                   params.ase_iterations, params.ase_warmup, params.seed)
     MERGE_ASE_RESULTS(RUN_ASE_SHARD.out.results.collect())
-
-    emit:
-    results = MERGE_ASE_RESULTS.out.results
 }
 
 
@@ -258,80 +254,71 @@ workflow {
         REFERENCE_WF(fasta)
         DNA_WF(sheet, fasta, REFERENCE_WF.out.saf, REFERENCE_WF.out.bed, REFERENCE_WF.out.summary)
     }
-    else if (params.step == 'rna') {
-        def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'), 'rna').samplesheet
-        REFERENCE_WF(requiredFile(params.fasta, 'fasta'))
-        RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
-        EXPRESSION_WF(RNA_WF.out.bam, REFERENCE_WF.out.tx2gene)
-    }
     else if (params.step == 'diffase') {
-        if (!params.counts && !params.hs_counts) error 'Provide --counts or --hs_counts'
-        def simulate_priors = !params.priors
-        def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'),
-                                         simulate_priors ? 'diffase_priors' : 'diffase').samplesheet
-        // The transcriptome is only rebuilt when the priors have to be simulated.
-        // Everything else this step needs from the annotation is a plain map of
-        // genes, transcripts and chromosomes, which comes straight from the GFF3.
-        // Copy number is always keyed by gene, so transcript-level counts need the
-        // transcript-to-gene map; samplesheet ploidy needs the gene-to-chromosome
-        // map. Both come from the GFF3 alone.
-        def needs_ploidy_map = !params.counts && !params.copy_number
-        def needs_tx2gene = transcriptLevel() && !params.counts
-        def gene_map = null
-        def tx2gene = emptyTx2gene()
-        if (simulate_priors) {
-            REFERENCE_WF(requiredFile(params.fasta, 'fasta'))
-            gene_map = REFERENCE_WF.out.summary
-            tx2gene = REFERENCE_WF.out.tx2gene
-        }
-        else if (needs_ploidy_map || needs_tx2gene || params.gff3) {
-            if (!params.gff3) {
-                error(needs_tx2gene ?
-                    'Provide --gff3: transcript-level counts need the transcript-to-gene map to find their copy number' :
-                    'Provide --gff3: samplesheet ploidy needs the gene-to-chromosome map')
+        if (params.ase_input) {
+            if (params.hs_counts || params.copy_number || params.priors) {
+                error 'Give either --ase_input, or --hs_counts with --copy_number and --priors, not both'
             }
-            BUILD_FEATURE_MAP(requiredFile(params.gff3, 'gff3'))
-            gene_map = BUILD_FEATURE_MAP.out.genes
-            tx2gene = BUILD_FEATURE_MAP.out.tx2gene
-        }
-        def priors
-        if (params.priors) priors = requiredFile(params.priors, 'priors')
-        else {
-            // Without priors, the RNA libraries of the samplesheet are aligned and
-            // counted as in the rna step, without Oarfish, for their read intervals.
-            RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
-            def read_intervals = transcriptLevel() ? RNA_WF.out.transcript_read_intervals
-                                                   : RNA_WF.out.gene_read_intervals
-            PRIORS_WF(read_intervals, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
-                      REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx)
-            priors = PRIORS_WF.out.priors
-        }
-        if (params.counts) {
-            PREPARE_COMBINED_ASE_INPUT(sheet, requiredFile(params.counts, 'counts'), priors,
-                                       params.min_prior, params.max_misassignment)
-            DIFFASE_WF(PREPARE_COMBINED_ASE_INPUT.out.ase_input)
+            DIFFASE_WF(requiredFile(params.ase_input, 'ase_input'))
         }
         else {
+            if (!params.hs_counts) error 'Provide --ase_input, or --hs_counts (with --copy_number and --priors if available)'
+            def simulate_priors = !params.priors
+            def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'),
+                                             simulate_priors ? 'diffase_priors' : 'diffase').samplesheet
+            // Without priors the transcriptome is rebuilt to simulate them. Otherwise
+            // the step only needs plain maps from the GFF3: genes to chromosomes for
+            // samplesheet ploidy, and transcripts to genes for transcript-level counts,
+            // since copy number is keyed by gene.
+            def needs_ploidy_map = !params.copy_number
+            def needs_tx2gene = transcriptLevel()
+            def gene_map = null
+            def tx2gene = emptyTx2gene()
+            def priors
+            if (simulate_priors) {
+                REFERENCE_WF(requiredFile(params.fasta, 'fasta'))
+                gene_map = REFERENCE_WF.out.summary
+                tx2gene = REFERENCE_WF.out.tx2gene
+                // The libraries are aligned and counted as in the rna step, without
+                // Oarfish, for the positions of their reads.
+                RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
+                PRIORS_WF(RNA_WF.out.read_intervals, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
+                          REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx)
+                priors = PRIORS_WF.out.priors
+            }
+            else {
+                priors = requiredFile(params.priors, 'priors')
+                if (needs_ploidy_map || needs_tx2gene) {
+                    if (!params.gff3) {
+                        error(needs_tx2gene ?
+                            'Provide --gff3: transcript-level counts need the transcript-to-gene map to find their copy number' :
+                            'Provide --gff3 or --copy_number: samplesheet ploidy needs the gene-to-chromosome map')
+                    }
+                    BUILD_FEATURE_MAP(requiredFile(params.gff3, 'gff3'))
+                    gene_map = BUILD_FEATURE_MAP.out.genes
+                    tx2gene = BUILD_FEATURE_MAP.out.tx2gene
+                }
+            }
             def copy_number
             if (params.copy_number) copy_number = requiredFile(params.copy_number, 'copy_number')
             else {
                 COPY_NUMBER_FROM_PLOIDY(sheet, gene_map)
                 copy_number = COPY_NUMBER_FROM_PLOIDY.out.copy_number
             }
-            PREPARE_ASE_INPUT(sheet, requiredFile(params.hs_counts, 'hs_counts'),
-                              copy_number, priors, tx2gene, params.min_prior, params.max_misassignment)
+            PREPARE_ASE_INPUT(sheet, requiredFile(params.hs_counts, 'hs_counts'), copy_number, priors, tx2gene, params.level)
             DIFFASE_WF(PREPARE_ASE_INPUT.out.ase_input)
         }
     }
     else {
-        def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'), 'all').samplesheet
+        // rna, and all, which adds the DNA copy number and the differential test.
+        def sheet = VALIDATE_SAMPLESHEET(requiredFile(params.samplesheet, 'samplesheet'), params.step).samplesheet
         def fasta = requiredFile(params.fasta, 'fasta')
         REFERENCE_WF(fasta)
         RNA_WF(sheet, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene)
         EXPRESSION_WF(RNA_WF.out.bam, REFERENCE_WF.out.tx2gene)
         def copy_number
         if (params.copy_number) copy_number = requiredFile(params.copy_number, 'copy_number')
-        else if (samplesHaveDNA(params.samplesheet)) {
+        else if (params.step == 'all' && samplesHaveDNA(params.samplesheet)) {
             DNA_WF(sheet, fasta, REFERENCE_WF.out.saf, REFERENCE_WF.out.bed, REFERENCE_WF.out.summary)
             copy_number = DNA_WF.out.copy_number
         }
@@ -342,14 +329,11 @@ workflow {
         def priors
         if (params.priors) priors = requiredFile(params.priors, 'priors')
         else {
-            def read_intervals = transcriptLevel() ? RNA_WF.out.transcript_read_intervals : RNA_WF.out.gene_read_intervals
-            PRIORS_WF(read_intervals, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
+            PRIORS_WF(RNA_WF.out.read_intervals, REFERENCE_WF.out.transcriptome, REFERENCE_WF.out.tx2gene,
                       REFERENCE_WF.out.hap1_tx, REFERENCE_WF.out.hap2_tx)
             priors = PRIORS_WF.out.priors
         }
-        def hs_counts = transcriptLevel() ? RNA_WF.out.transcript_hs_counts : RNA_WF.out.gene_hs_counts
-        PREPARE_ASE_INPUT(sheet, hs_counts, copy_number, priors, REFERENCE_WF.out.tx2gene,
-                          params.min_prior, params.max_misassignment)
-        DIFFASE_WF(PREPARE_ASE_INPUT.out.ase_input)
+        PREPARE_ASE_INPUT(sheet, RNA_WF.out.hs_counts, copy_number, priors, REFERENCE_WF.out.tx2gene, params.level)
+        if (params.step == 'all') DIFFASE_WF(PREPARE_ASE_INPUT.out.ase_input)
     }
 }

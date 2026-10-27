@@ -70,6 +70,24 @@ gam.mles.data = function(x){
 # known to be below the resolution of the draws, so it is reported as 1/draws.
 tail_ev <- function(x, null) max(2 * min(mean(x > null), mean(x < null)), 1 / length(x))
 
+# Per-copy H1 share a group with copy number (cn_h1, cn_h2) needs for its
+# libraries to show the allelic balance raw_b: the theta of a gene that fully
+# compensates a change of copy number.
+compensated_theta <- function(raw_b, cn_h1, cn_h2) cn_h2 * raw_b / (cn_h1 * (1 - raw_b) + cn_h2 * raw_b)
+
+# ROPE margin of every posterior draw: the change in theta that a full
+# compensation of the copy-number change from group B to group A would give.
+# Without a change, the margin of a 2:1 gain of either haplotype is used, so it
+# means the same on every chromosome.
+rope_margin <- function(theta_b, raw_b, cn_a, cn_b) {
+  if (isTRUE(all.equal(cn_a[1] / cn_a[2], cn_b[1] / cn_b[2]))) {
+    gain_h1 <- abs(compensated_theta(raw_b, 2 * cn_b[1], cn_b[2]) - theta_b)
+    gain_h2 <- abs(compensated_theta(raw_b, cn_b[1], 2 * cn_b[2]) - theta_b)
+    return((gain_h1 + gain_h2) / 2)
+  }
+  abs(compensated_theta(raw_b, cn_a[1], cn_a[2]) - theta_b)
+}
+
 prior_empBayes_forbeta <- function(xs, ys, zs, cnv1, cnv2){
   bbeta_est = (xs + ys + zs) / (cnv1 + cnv2)
   bbeta_est[which(bbeta_est==0)]=0.1
@@ -134,8 +152,6 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       # Every draw on the same side: diffAI_pvalue is the bound 1/draws.
       analysis_flag <- if (all(alpha[, 1] > alpha[, 2]) || all(alpha[, 1] < alpha[, 2])) "pvalue0" else "Success"
     }else{theta <- matrix(NA_real_,n_groups,n_groups); alpha <- matrix(NA_real_,n_groups,n_groups); analysis_flag <- "Skipped_Low_Counts"}
-    delta_threshold <- 0.15
-    diff_distribution <- theta[, 1] - theta[, 2]
     # theta is the H1 share per copy. For plotting, the H1 share of the gene's
     # expression with the group's copy number put back: the allelic balance the
     # libraries show, which sits at 0.5 only where the haplotypes are equally dosed.
@@ -144,6 +160,7 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       cn_group[i, 1] * theta[, i] / (cn_group[i, 1] * theta[, i] + cn_group[i, 2] * (1 - theta[, i]))
     })
     theta_raw <- matrix(theta_raw, ncol = n_groups)
+    margin <- rope_margin(theta[, 2], theta_raw[, 2], cn_group[1, ], cn_group[2, ])
     gene_res <- list(test = test_name,
       groupA = group_levels[1],
       groupB = group_levels[2],
@@ -189,7 +206,7 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       delta_thetaRaw_mean = mean(theta_raw[, 1]) - mean(theta_raw[, 2]),
       delta_alpha_mean = mean(alpha[, 1]) - mean(alpha[, 2]),
       diffAI_pvalue = tail_ev(alpha[, 1] - alpha[, 2], 0),
-      rope_value = mean(abs(diff_distribution) < delta_threshold),
+      rope_value = mean(abs(theta[, 1] - theta[, 2]) < margin),
       analysis_flag = analysis_flag
     )
     return(gene_res)

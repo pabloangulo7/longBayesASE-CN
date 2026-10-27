@@ -17,7 +17,7 @@
         "contrast": {"type": "string"},
         "hs_counts": {"type": "string", "format": "file-path"},
         "copy_number": {"type": "string", "format": "file-path"},
-        "counts": {"type": "string", "format": "file-path"},
+        "ase_input": {"type": "string", "format": "file-path"},
         "priors": {"type": "string", "format": "file-path"},
         "container_tag": {"type": "string"},
         "outdir": {"type": "string", "default": "results"}
@@ -34,7 +34,7 @@
         "cn_change_threshold": {"type": "number", "exclusiveMinimum": 1, "default": 1.2},
         "min_haplotype_depth": {"type": "number", "minimum": 0, "default": 10},
         "min_gene_depth": {"type": "number", "minimum": 0, "default": 1},
-        "gene_copies": {"type": "string", "enum": ["all", "primary"], "default": "all"},
+        "gene_copies": {"type": "string", "enum": ["all", "primary"], "default": "primary"},
         "prior_reads": {"type": "integer", "minimum": 1, "default": 2000},
         "min_prior_reads": {"type": "integer", "minimum": 1, "default": 10},
         "min_prior": {"type": "number", "minimum": 0, "exclusiveMaximum": 1, "default": 0.01},

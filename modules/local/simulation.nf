@@ -4,7 +4,7 @@ process SIMULATE_PRIOR_READS {
 
     input:
     tuple val(meta), path(transcriptome)
-    path read_intervals
+    path read_intervals, stageAs: 'intervals/*'
 
     output:
     tuple val(meta), path("${meta.sample}.fastq.gz"), emit: reads

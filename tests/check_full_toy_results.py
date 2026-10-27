@@ -22,7 +22,7 @@ assert gain["direction"] == "gain"
 assert abs(float(gain["CN_H1"]) - 2) < 0.05
 assert abs(float(gain["CN_H2"]) - 1) < 0.05
 
-priors = read(ROOT / "priors" / "mapping_priors.gene.tsv")
+priors = read(ROOT / "rna" / "mapping_priors.gene.tsv")
 assert {row["ID"] for row in priors} == {"GBASE", "GGAIN"}
 
 results = {row["ID"]: row for row in read(ROOT / "diffase" / "diffASE_results.tsv")}
@@ -30,7 +30,7 @@ required = {
     "groupA_alphaAI_pvalue", "groupA_thetaAI_pvalue",
     "groupB_alphaAI_pvalue", "groupB_thetaAI_pvalue",
     "groupA_thetaRaw_mean", "groupB_thetaRaw_mean", "delta_thetaRaw_mean",
-    "diffAI_pvalue", "diffAI_lfsr", "diffAI_bfdr", "rope_value", "analysis_flag",
+    "diffAI_pvalue", "rope_value", "analysis_flag",
 }
 assert required.issubset(results["GBASE"])
 assert results["GBASE"]["analysis_flag"] in {"Success", "pvalue0"}

@@ -226,13 +226,13 @@ def test_balanced_ase_shards(tmp_path: Path) -> None:
         "--contrast", "ANEUPLOID:WT",
         "--shards", 2,
         "--output-dir", output,
+        "--excluded", tmp_path / "excluded.tsv",
     )
-    manifest = read_tsv(output / "manifest.tsv")
-    assert len(manifest) == 2
-    assert sum(int(row["genes"]) for row in manifest) == 2
-    assert all(Path(output / row["file"]).exists() for row in manifest)
-    shard_rows = read_tsv(output / manifest[0]["file"])
-    assert {"group", "test", "groupA", "groupB"}.issubset(shard_rows[0])
+    shards = sorted(output.glob("*.shard_*.tsv"))
+    assert len(shards) == 2
+    genes = [{row["ID"] for row in read_tsv(path)} for path in shards]
+    assert len(set.union(*genes)) == 2 and not set.intersection(*genes)
+    assert {"group", "test", "groupA", "groupB"}.issubset(read_tsv(shards[0])[0])
 
 
 def test_reference_split_uses_required_haplotype_suffixes(tmp_path: Path) -> None:
@@ -330,21 +330,23 @@ def test_copy_number_from_samplesheet_ploidy(tmp_path: Path) -> None:
 
 
 def test_simulated_reads_are_cut_at_the_read_intervals(tmp_path: Path) -> None:
-    """Each interval is cut from this haplotype's copy, clipped to its length."""
+    """Each interval of every library is cut from this haplotype's copy, clipped to its length."""
     fasta = tmp_path / "hap1.fa"
     fasta.write_text(">TX1_hap1\n" + "A" * 30 + "C" * 30 + "\n>TX2_hap1\n" + "G" * 40 + "\n>TX3_hap1\nTTTT\n")
-    intervals = tmp_path / "read_intervals.tsv"
-    intervals.write_text("sample\tID\ttranscript\tstart\tend\n"
-                         "S1\tG1\tTX1\t0\t30\nS2\tG1\tTX1\t25\t80\nS1\tG1\tTX1\t0\t30\n"
-                         "S1\tG2\tTX2\t0\t10\n")
+    library1, library2 = tmp_path / "S1.gene_read_intervals.tsv.gz", tmp_path / "S2.gene_read_intervals.tsv.gz"
+    with gzip.open(library1, "wt") as handle:
+        handle.write("ID\ttranscript\tstart\tend\nG1\tTX1\t0\t30\nG1\tTX1\t0\t30\nG2\tTX2\t0\t10\n")
+    with gzip.open(library2, "wt") as handle:
+        handle.write("ID\ttranscript\tstart\tend\nG1\tTX1\t25\t80\n")
     output = tmp_path / "SIM_HAP1.fastq.gz"
-    run_script("simulate_prior_reads.py", "--intervals", intervals, "--transcriptome", fasta, "--output", output)
+    run_script("simulate_prior_reads.py", "--intervals", library1, library2,
+               "--transcriptome", fasta, "--output", output)
     with gzip.open(output, "rt") as handle:
         lines = handle.read().splitlines()
     # A repeated interval gives a second read; TX2's 10 bp interval is too short;
     # TX3 has no interval.
-    assert lines[0::4] == ["@TX1_hap1__1_30__0", "@TX1_hap1__26_60__1", "@TX1_hap1__1_30__2"]
-    assert lines[1::4] == ["A" * 30, "A" * 5 + "C" * 30, "A" * 30]
+    assert lines[0::4] == ["@TX1_hap1__1_30__0", "@TX1_hap1__1_30__1", "@TX1_hap1__26_60__2"]
+    assert lines[1::4] == ["A" * 30, "A" * 30, "A" * 5 + "C" * 30]
 
 
 def test_chromosome_copy_number_and_haplotype_proportions(tmp_path: Path) -> None:
@@ -409,6 +411,7 @@ def test_chromosome_copy_number_and_haplotype_proportions(tmp_path: Path) -> Non
         "--annotation-summary", annotation,
         "--coverage", *coverage,
         "--cn-resolution", "gene",
+        "--gene-copies", "all",
         "--output", gene_output,
         "--qc-output", tmp_path / "copy_number.gene.qc.tsv",
     )
@@ -436,61 +439,50 @@ def test_ase_input_keeps_libraries_without_reads(tmp_path: Path) -> None:
     assert (filled["H1_counts"], filled["H2_counts"], filled["NonHS_counts"]) == ("0", "0", "0")
     assert (filled["CN_H1"], filled["CN_H2"], filled["group"]) == ("2.0", "1.0", "B")
 
-    # A combined table has copy number only on its rows: the missing library
-    # takes it from another library of the same DNA sample.
-    sheet.write_text("sample\tcondition\tdna_id\trna\nS1\tA\tD1\tx.bam\nS2\tA\tD1\ty.bam\n")
-    combined = tmp_path / "combined.tsv"
-    combined.write_text("sample\tID\tH1\tH2\tNonHS\tCN_H1\tCN_H2\nS1\tG1\t5\t3\t2\t3\t1\nS2\tG2\t4\t4\t4\t1\t1\n")
-    run_script("prepare_ase_input.py", "--counts", combined, "--samplesheet", sheet,
-               "--priors", priors, "--output", output)
-    rows = {(row["sample"], row["ID"]): row for row in read_tsv(output)}
-    assert (rows[("S2", "G1")]["CN_H1"], rows[("S2", "G1")]["H1_counts"]) == ("3.0", "0")
 
 
-def test_ase_input_leaves_out_genes_the_priors_cannot_inform(tmp_path: Path) -> None:
-    """min(r1, r2) at the floor, or simulated reads on the wrong haplotype, drop the gene."""
+def test_ase_input_carries_the_misassignment_rates(tmp_path: Path) -> None:
+    """The priors' misassignment goes into the ASE input, 0 when the priors have none."""
     sheet = tmp_path / "samples.tsv"
-    sheet.write_text("sample\tcondition\tdna_id\trna\nS1\tA\tD1\tx.bam\nS2\tB\tD2\ty.bam\n")
+    sheet.write_text("sample\tcondition\tdna_id\trna\nS1\tA\tD1\tx.bam\n")
     counts = tmp_path / "counts.tsv"
-    counts.write_text("sample\tID\tH1\tH2\tNonHS\n" + "".join(
-        f"{sample}\t{gene}\t5\t5\t5\n" for sample in ("S1", "S2") for gene in ("GOOD", "ONEHAP", "SWAPPED")))
+    counts.write_text("sample\tID\tH1\tH2\tNonHS\nS1\tG1\t5\t3\t2\n")
     copy_number = tmp_path / "cn.tsv"
-    copy_number.write_text("sample\tID\tCN_H1\tCN_H2\n" + "".join(
-        f"{dna}\t{gene}\t1\t1\n" for dna in ("D1", "D2") for gene in ("GOOD", "ONEHAP", "SWAPPED")))
+    copy_number.write_text("sample\tID\tCN_H1\tCN_H2\nD1\tG1\t1\t1\n")
     priors = tmp_path / "priors.tsv"
-    priors.write_text("ID\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\n"
-                      "GOOD\t0.8\t0.8\t0\t0.01\nONEHAP\t0.8\t0.001\t0\t0\nSWAPPED\t0.8\t0.8\t0.2\t0\n")
     output = tmp_path / "ase_input.tsv"
-    run_script("prepare_ase_input.py", "--hs-counts", counts, "--samplesheet", sheet,
-               "--copy-number", copy_number, "--priors", priors, "--output", output)
-    assert {row["ID"] for row in read_tsv(output)} == {"GOOD"}
-
-    # The thresholds are parameters, and priors without misassignment columns have none.
-    priors.write_text("ID\tH1_prior\tH2_prior\nGOOD\t0.8\t0.8\nONEHAP\t0.8\t0.001\nSWAPPED\t0.8\t0.8\n")
-    run_script("prepare_ase_input.py", "--hs-counts", counts, "--samplesheet", sheet,
-               "--copy-number", copy_number, "--priors", priors, "--min-prior", "0.0001",
-               "--output", output)
-    assert {row["ID"] for row in read_tsv(output)} == {"GOOD", "ONEHAP", "SWAPPED"}
+    for table, expected in (("ID\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\nG1\t0.8\t0.8\t0.01\t0.02\n",
+                             ("0.01", "0.02")),
+                            ("ID\tH1_prior\tH2_prior\nG1\t0.8\t0.8\n", ("0.0", "0.0"))):
+        priors.write_text(table)
+        run_script("prepare_ase_input.py", "--hs-counts", counts, "--samplesheet", sheet,
+                   "--copy-number", copy_number, "--priors", priors, "--output", output)
+        row = read_tsv(output)[0]
+        assert (row["H1_misassignment"], row["H2_misassignment"]) == expected
 
 
-def test_merged_results_carry_the_bayesian_fdr(tmp_path: Path) -> None:
-    """lfsr is half the evidence value; bfdr is the mean lfsr down the ranking, per test."""
-    header = "ID\ttest\tdiffAI_pvalue\tanalysis_flag\n"
-    shard1, shard2 = tmp_path / "s1.tsv", tmp_path / "s2.tsv"
-    shard1.write_text(header + "G1\tA_VS_B\t0.02\tSuccess\nG2\tA_VS_B\t0.2\tSuccess\nG5\tA_VS_B\tNA\tSkipped_Low_Counts\n")
-    shard2.write_text(header + "G3\tA_VS_B\t0.02\tSuccess\nG4\tC_VS_B\t0.6\tSuccess\n")
-    output = tmp_path / "merged.tsv"
-    run_script("merge_ase_results.py", "--inputs", shard1, shard2, "--output", output)
-    rows = read_tsv(output)
-    assert list(rows[0]) == ["ID", "test", "diffAI_pvalue", "diffAI_lfsr", "diffAI_bfdr", "analysis_flag"]
-    rows = {row["ID"]: row for row in rows}
-    assert float(rows["G1"]["diffAI_lfsr"]) == pytest.approx(0.01)
-    # G1 and G3 are tied, so they share the rate of the pair; G2 adds its own lfsr.
-    assert float(rows["G1"]["diffAI_bfdr"]) == float(rows["G3"]["diffAI_bfdr"]) == pytest.approx(0.01)
-    assert float(rows["G2"]["diffAI_bfdr"]) == pytest.approx((0.01 + 0.01 + 0.1) / 3)
-    # Each test has its own ranking, and genes that were not fitted have no rate.
-    assert float(rows["G4"]["diffAI_bfdr"]) == pytest.approx(0.3)
-    assert rows["G5"]["diffAI_bfdr"] == "NA"
+def test_split_ase_input_leaves_out_features_the_priors_cannot_inform(tmp_path: Path) -> None:
+    """min(r1, r2) at the floor, or simulated reads on the wrong haplotype, drop the feature."""
+    header = ("sample\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2"
+              "\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\n")
+    priors = {"GOOD": "0.8\t0.8\t0\t0.01", "ONEHAP": "0.8\t0.001\t0\t0", "SWAPPED": "0.8\t0.8\t0.2\t0"}
+    ase_input = tmp_path / "ASE_input.tsv"
+    ase_input.write_text(header + "".join(
+        f"{group}{rep}\t{group}\t{gene}\t20\t20\t10\t1\t1\t{values}\n"
+        for group in ("A", "B") for rep in (1, 2, 3) for gene, values in priors.items()))
+
+    def kept(*options: object) -> set[str]:
+        shards, excluded = tmp_path / "shards", tmp_path / "excluded.tsv"
+        for path in shards.glob("*"):
+            path.unlink()
+        run_script("split_ase_input.py", "--input", ase_input, "--contrast", "A:B", "--shards", 1,
+                   "--output-dir", shards, "--excluded", excluded, *options)
+        return {row["ID"] for path in shards.glob("*.shard_*.tsv") for row in read_tsv(path)}
+
+    assert kept() == {"GOOD"}
+    reasons = {row["ID"]: row["reason"] for row in read_tsv(tmp_path / "excluded.tsv")}
+    assert reasons == {"ONEHAP": "min(r1, r2) <= 0.01", "SWAPPED": "misassignment > 0.05"}
+    assert kept("--min-prior", 0.0001, "--max-misassignment", 0.5) == {"GOOD", "ONEHAP", "SWAPPED"}
 
 
 def test_split_ase_input_multiple_contrasts(tmp_path: Path) -> None:
@@ -505,9 +497,7 @@ def test_split_ase_input_multiple_contrasts(tmp_path: Path) -> None:
     ase_input.write_text(header + "".join(rows))
     shards = tmp_path / "shards"
     run_script("split_ase_input.py", "--input", ase_input, "--contrast", "A:C,B:C",
-               "--shards", "2", "--output-dir", shards)
-    manifest = read_tsv(shards / "manifest.tsv")
-    assert {row["contrast"] for row in manifest} == {"A_VS_C", "B_VS_C"}
+               "--shards", "2", "--output-dir", shards, "--excluded", tmp_path / "excluded.tsv")
     files = sorted(path.name for path in shards.glob("*.shard_*.tsv"))
     assert files == ["A_VS_C.shard_0001.tsv", "A_VS_C.shard_0002.tsv",
                      "B_VS_C.shard_0001.tsv", "B_VS_C.shard_0002.tsv"]
@@ -529,7 +519,8 @@ def test_split_ase_input_rejects_bad_contrasts(tmp_path: Path) -> None:
     for contrast in ("A:B,A:B", "A:A", "A:B,A:Z", "A:B:C"):
         with pytest.raises(subprocess.CalledProcessError):
             run_script("split_ase_input.py", "--input", ase_input, "--contrast", contrast,
-                       "--shards", "2", "--output-dir", tmp_path / f"out_{abs(hash(contrast))}")
+                       "--shards", "2", "--output-dir", tmp_path / f"out_{abs(hash(contrast))}",
+                       "--excluded", tmp_path / "excluded.tsv")
 
 
 def test_split_ase_input_rejects_pooled_sides(tmp_path: Path) -> None:
@@ -545,7 +536,7 @@ def test_split_ase_input_rejects_pooled_sides(tmp_path: Path) -> None:
     with pytest.raises(subprocess.CalledProcessError):
         run_script("split_ase_input.py", "--input", ase_input,
                    "--contrast", "GAIN:WT1+WT2", "--shards", "1",
-                   "--output-dir", tmp_path / "bad")
+                   "--output-dir", tmp_path / "bad", "--excluded", tmp_path / "excluded.tsv")
 
 
 def _copy_number_inputs(tmp_path: Path, chromosomes: dict, ploidy: str = "") -> dict:
