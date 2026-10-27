@@ -224,10 +224,10 @@ workflow DIFFASE_WF {
 
     main:
     COMPILE_ASE_MODEL(channel.value(file("${projectDir}/bin/ASE_model.stan", checkIfExists: true)))
-    SPLIT_ASE_INPUT(ase_input, params.contrast, params.ase_shards, params.min_prior, params.max_misassignment)
+    SPLIT_ASE_INPUT(ase_input, params.contrast, params.ase_shards)
     RUN_ASE_SHARD(SPLIT_ASE_INPUT.out.shards.flatten(), COMPILE_ASE_MODEL.out.model,
                   params.ase_iterations, params.ase_warmup, params.seed)
-    MERGE_ASE_RESULTS(RUN_ASE_SHARD.out.results.collect())
+    MERGE_ASE_RESULTS(RUN_ASE_SHARD.out.results.collect(), ase_input, params.min_prior, params.max_misassignment)
 }
 
 

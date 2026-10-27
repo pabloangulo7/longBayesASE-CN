@@ -38,12 +38,9 @@ process SPLIT_ASE_INPUT {
     path ase_input
     val contrast
     val shards
-    val min_prior
-    val max_misassignment
 
     output:
     path 'shards/*.shard_*.tsv', emit: shards
-    path 'excluded_genes.tsv', emit: excluded
 
     script:
     """
@@ -51,10 +48,7 @@ process SPLIT_ASE_INPUT {
         --input ${ase_input} \
         --contrast '${contrast}' \
         --shards ${shards} \
-        --min-prior ${min_prior} \
-        --max-misassignment ${max_misassignment} \
-        --output-dir shards \
-        --excluded excluded_genes.tsv
+        --output-dir shards
     """
 
     stub:
@@ -62,7 +56,6 @@ process SPLIT_ASE_INPUT {
     # One shard per requested contrast, so a stub run still exercises the fan
     # out that several contrasts produce.
     mkdir -p shards
-    printf 'ID\treason\n' > excluded_genes.tsv
     echo '${contrast}' | tr ',' '\n' | while IFS=: read -r group_a group_b; do
         [ -n "\${group_a}" ] || continue
         label="\${group_a}_VS_\${group_b}"
@@ -131,17 +124,25 @@ process MERGE_ASE_RESULTS {
 
     input:
     path results
+    path ase_input
+    val min_prior
+    val max_misassignment
 
     output:
     path 'diffASE_results.tsv', emit: results
 
     script:
     """
-    merge_ase_results.py --inputs ${results} --output diffASE_results.tsv
+    merge_ase_results.py \
+        --inputs ${results} \
+        --ase-input ${ase_input} \
+        --min-prior ${min_prior} \
+        --max-misassignment ${max_misassignment} \
+        --output diffASE_results.tsv
     """
 
     stub:
     """
-    cp ${results[0]} diffASE_results.tsv
+    awk 'BEGIN { OFS = "\\t" } { print \$0, (NR == 1 ? "filter_flag" : "pass") }' ${results[0]} > diffASE_results.tsv
     """
 }

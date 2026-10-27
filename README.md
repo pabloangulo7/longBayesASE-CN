@@ -152,7 +152,6 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 | Output | Content |
 |---|---|
 | `diffase/diffASE_results.tsv` | One row per feature and contrast (see [Result columns](#result-columns)). |
-| `diffase/excluded_genes.tsv` | Features left out before the fit, with the reason. |
 | `diffase/ASE_input.gene.tsv`, `diffase/mapping_priors.gene.tsv` | The model input and priors, when this step builds them. |
 
 The small table in `examples/toy_ase/` runs the step without sequencing data:
@@ -179,8 +178,8 @@ nextflow run . -profile conda --step diffase \
 | `--prior_reads` | `2000` | Reads per feature, split among the libraries, whose positions are used to simulate the priors. |
 | `--min_prior_reads` | `10` | Minimum simulated reads per haplotype for a feature to get a prior. |
 | **diffASE** | | |
-| `--min_prior` | `0.01` | Features with `min(r1, r2)` at or below this are not fitted. |
-| `--max_misassignment` | `0.05` | Features whose simulated reads go to the wrong haplotype more often than this are not fitted. |
+| `--min_prior` | `0.01` | Features with `min(r1, r2)` at or below this are flagged `low_prior`. |
+| `--max_misassignment` | `0.05` | Features whose simulated reads go to the wrong haplotype more often than this are flagged `misassignment`. |
 | `--ase_shards` | `100` | Groups of features fitted in parallel, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per feature. |
 | `--ase_warmup` | `10000` | Stan warmup iterations. |
@@ -220,7 +219,12 @@ thetaRaw = CN_H1 × theta / (CN_H1 × theta + CN_H2 × (1 - theta))
 
 The priors are those of BayesASE: `alpha ~ lognormal(0, 0.5)`, a gamma hierarchy for library size `beta`, and inverse-gamma(2.01, 0.05) overdispersion. Each feature is fitted on its own with Stan (one chain). Where a group has no read in a category, one read is added to its best-covered library, as in BayesASE, to keep `alpha` finite.
 
-Before the fit, features are left out (and listed in `excluded_genes.tsv`) when `min(r1, r2) <= --min_prior`, because few of their reads cover a heterozygous site, or when either misassignment rate is above `--max_misassignment`, because the model does not include misassignment.
+Every feature is fitted, and `filter_flag` marks those whose priors make the result unreliable:
+
+- `low_prior` when `min(r1, r2) <= --min_prior`: few reads of one haplotype cover a heterozygous site, so its counts barely inform `alpha`, and a small error in `r1` or `r2` becomes a large error in the bias correction `r1/r2`.
+- `misassignment` when either misassignment rate is above `--max_misassignment`: the model assumes that a read called H1 comes from H1, and contamination from the other haplotype scales with its copy number, so it can look like a difference between groups with different copy number.
+
+Features flagged with both get `low_prior;misassignment`; the rest get `pass`.
 
 ### Tests
 
@@ -250,6 +254,7 @@ It is the smallest level at which the central credible interval of `alpha_A - al
 | `diffAI_pvalue` | Evidence of differential allelic imbalance, corrected by copy number. |
 | `rope_value` | Probability that the difference in `theta` is smaller than full dosage compensation. |
 | `analysis_flag` | `Success`, `pvalue0`, `Skipped_Low_Counts`, or the error. |
+| `filter_flag` | `pass`, `low_prior` and/or `misassignment` (see [Model](#model)). |
 
 ## Citation
 

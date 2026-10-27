@@ -226,7 +226,6 @@ def test_balanced_ase_shards(tmp_path: Path) -> None:
         "--contrast", "ANEUPLOID:WT",
         "--shards", 2,
         "--output-dir", output,
-        "--excluded", tmp_path / "excluded.tsv",
     )
     shards = sorted(output.glob("*.shard_*.tsv"))
     assert len(shards) == 2
@@ -461,28 +460,28 @@ def test_ase_input_carries_the_misassignment_rates(tmp_path: Path) -> None:
         assert (row["H1_misassignment"], row["H2_misassignment"]) == expected
 
 
-def test_split_ase_input_leaves_out_features_the_priors_cannot_inform(tmp_path: Path) -> None:
-    """min(r1, r2) at the floor, or simulated reads on the wrong haplotype, drop the feature."""
+def test_merge_ase_results_flags_features_the_priors_cannot_inform(tmp_path: Path) -> None:
+    """min(r1, r2) at the floor, or simulated reads on the wrong haplotype, flag the feature."""
     header = ("sample\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2"
               "\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\n")
-    priors = {"GOOD": "0.8\t0.8\t0\t0.01", "ONEHAP": "0.8\t0.001\t0\t0", "SWAPPED": "0.8\t0.8\t0.2\t0"}
+    priors = {"GOOD": "0.8\t0.8\t0\t0.01", "ONEHAP": "0.8\t0.001\t0\t0",
+              "SWAPPED": "0.8\t0.8\t0.2\t0", "BOTH": "0.001\t0.8\t0\t0.3"}
     ase_input = tmp_path / "ASE_input.tsv"
     ase_input.write_text(header + "".join(
         f"{group}{rep}\t{group}\t{gene}\t20\t20\t10\t1\t1\t{values}\n"
-        for group in ("A", "B") for rep in (1, 2, 3) for gene, values in priors.items()))
+        for group in ("A", "B") for rep in (1, 2) for gene, values in priors.items()))
+    shard = tmp_path / "shard.results.tsv"
+    shard.write_text("ID\ttest\tdiffAI_pvalue\n" + "".join(f"{gene}\tA_VS_B\t0.5\n" for gene in priors))
 
-    def kept(*options: object) -> set[str]:
-        shards, excluded = tmp_path / "shards", tmp_path / "excluded.tsv"
-        for path in shards.glob("*"):
-            path.unlink()
-        run_script("split_ase_input.py", "--input", ase_input, "--contrast", "A:B", "--shards", 1,
-                   "--output-dir", shards, "--excluded", excluded, *options)
-        return {row["ID"] for path in shards.glob("*.shard_*.tsv") for row in read_tsv(path)}
+    def flags(*options: object) -> dict[str, str]:
+        output = tmp_path / "merged.tsv"
+        run_script("merge_ase_results.py", "--inputs", shard, "--ase-input", ase_input,
+                   "--output", output, *options)
+        return {row["ID"]: row["filter_flag"] for row in read_tsv(output)}
 
-    assert kept() == {"GOOD"}
-    reasons = {row["ID"]: row["reason"] for row in read_tsv(tmp_path / "excluded.tsv")}
-    assert reasons == {"ONEHAP": "min(r1, r2) <= 0.01", "SWAPPED": "misassignment > 0.05"}
-    assert kept("--min-prior", 0.0001, "--max-misassignment", 0.5) == {"GOOD", "ONEHAP", "SWAPPED"}
+    assert flags() == {"GOOD": "pass", "ONEHAP": "low_prior", "SWAPPED": "misassignment",
+                       "BOTH": "low_prior;misassignment"}
+    assert set(flags("--min-prior", 0.0001, "--max-misassignment", 0.5).values()) == {"pass"}
 
 
 def test_split_ase_input_multiple_contrasts(tmp_path: Path) -> None:
@@ -497,7 +496,7 @@ def test_split_ase_input_multiple_contrasts(tmp_path: Path) -> None:
     ase_input.write_text(header + "".join(rows))
     shards = tmp_path / "shards"
     run_script("split_ase_input.py", "--input", ase_input, "--contrast", "A:C,B:C",
-               "--shards", "2", "--output-dir", shards, "--excluded", tmp_path / "excluded.tsv")
+               "--shards", "2", "--output-dir", shards)
     files = sorted(path.name for path in shards.glob("*.shard_*.tsv"))
     assert files == ["A_VS_C.shard_0001.tsv", "A_VS_C.shard_0002.tsv",
                      "B_VS_C.shard_0001.tsv", "B_VS_C.shard_0002.tsv"]
@@ -519,8 +518,7 @@ def test_split_ase_input_rejects_bad_contrasts(tmp_path: Path) -> None:
     for contrast in ("A:B,A:B", "A:A", "A:B,A:Z", "A:B:C"):
         with pytest.raises(subprocess.CalledProcessError):
             run_script("split_ase_input.py", "--input", ase_input, "--contrast", contrast,
-                       "--shards", "2", "--output-dir", tmp_path / f"out_{abs(hash(contrast))}",
-                       "--excluded", tmp_path / "excluded.tsv")
+                       "--shards", "2", "--output-dir", tmp_path / f"out_{abs(hash(contrast))}")
 
 
 def test_split_ase_input_rejects_pooled_sides(tmp_path: Path) -> None:
@@ -536,7 +534,7 @@ def test_split_ase_input_rejects_pooled_sides(tmp_path: Path) -> None:
     with pytest.raises(subprocess.CalledProcessError):
         run_script("split_ase_input.py", "--input", ase_input,
                    "--contrast", "GAIN:WT1+WT2", "--shards", "1",
-                   "--output-dir", tmp_path / "bad", "--excluded", tmp_path / "excluded.tsv")
+                   "--output-dir", tmp_path / "bad")
 
 
 def _copy_number_inputs(tmp_path: Path, chromosomes: dict, ploidy: str = "") -> dict:

@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""Filter the ASE input and balance its features across independent shards.
+"""Balance the features of the ASE input across independent shards.
 
-Features whose mapping priors cannot inform the model are left out first:
-those whose reads rarely cover a heterozygous site on one of the haplotypes
-(min(r1, r2) <= --min-prior), and those whose simulated reads come out on the
-wrong haplotype more often than --max-misassignment, which the model has no
-term for. Each contrast is then sharded on its own, so a shard always holds a
-single test and the model never sees two.
+Each contrast is sharded on its own, so a shard always holds a single test and
+the model never sees two.
 """
 
 from __future__ import annotations
@@ -14,7 +10,6 @@ from __future__ import annotations
 import argparse
 import csv
 import re
-import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -49,26 +44,13 @@ def parse_contrasts(value: str):
     return contrasts
 
 
-def exclusion(row: dict[str, str], min_prior: float, max_misassignment: float) -> str:
-    """Why a feature cannot be fitted, or an empty string if it can."""
-    if min(float(row["H1_prior"]), float(row["H2_prior"])) <= min_prior:
-        return f"min(r1, r2) <= {min_prior}"
-    wrong = max(float(row.get("H1_misassignment") or 0), float(row.get("H2_misassignment") or 0))
-    if wrong > max_misassignment:
-        return f"misassignment > {max_misassignment}"
-    return ""
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
     parser.add_argument("--contrast", required=True,
                         help="condition_a:condition_b, or several separated by commas")
     parser.add_argument("--shards", type=int, required=True)
-    parser.add_argument("--min-prior", type=float, default=0.01)
-    parser.add_argument("--max-misassignment", type=float, default=0.05)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--excluded", required=True, help="table of the features left out and why")
     args = parser.parse_args()
     contrasts = parse_contrasts(args.contrast)
     output = Path(args.output_dir)
@@ -80,19 +62,9 @@ def main() -> None:
             raise ValueError(f"ASE input is missing columns: {', '.join(sorted(missing))}")
         source_fields = list(reader.fieldnames or [])
         rows = list(reader)
-    excluded = {}
-    for row in rows:
-        reason = exclusion(row, args.min_prior, args.max_misassignment)
-        if reason:
-            excluded.setdefault(row["ID"], reason)
-    with open(args.excluded, "w") as handle:
-        handle.write("ID\treason\n")
-        handle.writelines(f"{feature}\t{reason}\n" for feature, reason in sorted(excluded.items()))
-    print(f"[split_ase_input] left out {len(excluded)} features; see {args.excluded}", file=sys.stderr)
-    available = {row["group"] for row in rows}
-    rows = [row for row in rows if row["ID"] not in excluded]
     if not rows:
-        raise ValueError("no feature passed the mapping-prior filters")
+        raise ValueError("the ASE input has no rows")
+    available = {row["group"] for row in rows}
     fieldnames = source_fields + ["test", "groupA", "groupB"]
     for contrast, group_a, group_b in contrasts:
         missing_groups = sorted({group_a, group_b} - available)

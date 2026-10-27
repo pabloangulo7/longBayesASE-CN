@@ -66,7 +66,7 @@ jobs:
             --ase_shards 2 --ase_iterations 20 --ase_warmup 10 \
             --outdir test-results
           test -s test-results/diffase/diffASE_results.tsv
-          test -s test-results/diffase/excluded_genes.tsv
+          head -1 test-results/diffase/diffASE_results.tsv | tr '\t' '\n' | grep -qx filter_flag
           test ! -e test-results/diffase/shards
 
       - name: Full pipeline

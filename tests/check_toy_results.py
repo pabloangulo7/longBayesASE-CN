@@ -10,6 +10,7 @@ rows = {row["ID"]: row for row in csv.DictReader(open(path), delimiter="\t")}
 assert set(rows) == {"GENE_BALANCED", "GENE_DIFFASE"}, f"unexpected genes: {sorted(rows)}"
 valid_fits = {"Success", "pvalue0"}
 assert all(row["analysis_flag"] in valid_fits for row in rows.values()), rows
+assert all(row["filter_flag"] == "pass" for row in rows.values()), rows
 
 # GENE_BALANCED doubles H1 exactly with its copy number, so once the copy-number term is
 # in the model it is not differential. GENE_DIFFASE keeps the duplicated
