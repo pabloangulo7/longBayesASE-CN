@@ -91,7 +91,7 @@ Multiple raw read files for one library may be separated with semicolons. An ali
 | `rna/counts/` | Per-library haplotype-specific counts with every read category, read groups and QC. |
 | `rna/oarfish/` | Oarfish output per library, including the unique/ambiguous read counts (`*.ambig_info.tsv`) and, with `--oarfish_bootstraps`, the inferential replicates (`*.infreps.pq`). |
 | `priors/mapping_priors.gene.tsv` | Per-gene H1 and H2 mapping probabilities, with the simulated reads behind each (`n_hap1`, `n_hap2`). With `--level transcript`, `mapping_priors.transcript.tsv` per transcript instead. |
-| `diffase/diffASE_results.tsv` | Allelic imbalance per condition, differential ASE, p-values, ROPE and fit status (columns described under [Result columns](#result-columns)). |
+| `diffase/diffASE_results.tsv` | Allelic imbalance per condition, differential ASE, evidence values, Bayesian false sign rates, ROPE and fit status (columns described under [Result columns](#result-columns)). |
 
 ## Run one part of the pipeline
 
@@ -170,6 +170,8 @@ The priors are the `r1` and `r2` of the model: the probability that a read from 
 
 `--step all` simulates them from the libraries it has just counted. A feature needs at least `--min_prior_reads` (10) simulated reads per haplotype, one per real read interval, to get a prior; `n_hap1` and `n_hap2` in the table tell how many each prior rests on. Features below that have too few reads for the model to fit them anyway.
 
+Before the fit, genes are left out when their priors cannot inform the model: those with `min(r1, r2) <= --min_prior` (0.01), whose reads rarely cover a heterozygous site on one of the haplotypes, and those whose simulated reads come out on the wrong haplotype (`H1_misassignment` or `H2_misassignment`) more often than `--max_misassignment` (0.05), since the model has no term for misassignment. The log of the ASE input step reports how many genes each filter removed.
+
 #### Copy number
 
 | You supply | What happens |
@@ -227,6 +229,8 @@ Most analyses only need the parameters above.
 | `--min_gene_depth` | `1` | Total depth a gene needs before its own copy number is estimated with `--copy_number_level gene`. |
 | `--prior_reads` | `2000` | Read intervals kept per feature for the mapping priors, split equally among the libraries. |
 | `--min_prior_reads` | `10` | Simulated reads per haplotype a feature needs to get a prior. |
+| `--min_prior` | `0.01` | Genes with `min(r1, r2)` at or below this are not fitted. |
+| `--max_misassignment` | `0.05` | Genes whose simulated reads land on the wrong haplotype more often than this are not fitted. |
 | `--ase_shards` | `100` | Parallel groups of genes fitted by Stan, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per gene. |
 | `--ase_warmup` | `10000` | Stan warmup iterations. |
@@ -258,6 +262,24 @@ thetaRaw = CN_H1 × theta / (CN_H1 × theta + CN_H2 × (1 - theta))
 
 It is the H1 share of the gene's expression, the allelic balance the libraries show. It is computed from the same posterior draws, so no second model is fitted, and it equals `theta` where both haplotypes have one copy. On a gained chromosome with `CN_H1=2`, a gene that follows its dosage has `theta=0.5` and `thetaRaw=2/3`; a gene with `delta_theta` significant against the gained haplotype and a `thetaRaw` close to that of the control group has had its extra copy compensated on that allele.
 
+### Testing and false discovery rate
+
+Each gene is fitted on its own with Stan (one chain, `--ase_iterations` minus `--ase_warmup` draws kept), with the priors of BayesASE: `alpha ~ lognormal(0, 0.5)`, a gamma hierarchy for the library sizes `beta` and an inverse-gamma(2.01, 0.05) overdispersion shared by the three read categories. Where a whole group has no read in a category, one read is added to its best-covered library, as in BayesASE; this keeps `alpha` finite and pulls the gene towards balance.
+
+The test statistic is BayesASE's evidence value, the two-sided posterior tail probability
+
+```text
+diffAI_pvalue = 2 × min{ P(alpha_A > alpha_B), P(alpha_A < alpha_B) }
+```
+
+that is, the smallest `ev` for which the `1 - ev` central credible interval of `alpha_A - alpha_B` excludes 0. When every draw falls on the same side it is only known to be below the resolution of the draws, and is reported as `1/draws` with the flag `pvalue0`.
+
+Half of it is the local false sign rate (`diffAI_lfsr`): the posterior probability that the direction of the difference is wrong. Within each test, the genes are ranked by it and `diffAI_bfdr` is the mean lfsr of all the genes at least as significant, the expected proportion of wrong directions in that list (Bayesian false sign rate).
+
+The pipeline reports these values and does not filter genes on them; which genes to call is left to the downstream analysis. Both rates concern the direction of the difference, not its size: where many genes differ slightly between the groups, as between independent clones, a list cut on `diffAI_bfdr` also takes in those small differences, so it is best combined with an effect-size criterion such as `delta_theta_mean`.
+
+`rope_value` describes the genes that are not differential: the posterior probability that `theta` differs by less than 0.15 between the groups.
+
 ### Result columns
 
 | Columns | Meaning |
@@ -269,11 +291,13 @@ It is the H1 share of the gene's expression, the allelic balance the libraries s
 | `groupX_alpha_mean` | Posterior mean of `alpha`. |
 | `groupX_theta_mean`, `_q025`, `_q975` | Per-copy H1 share, with its 95% credible interval. |
 | `groupX_thetaRaw_mean`, `_q025`, `_q975` | H1 share of the expression, not divided by copy number, with its 95% credible interval. |
-| `groupX_alphaAI_pvalue`, `groupX_thetaAI_pvalue` | Allelic imbalance within the group (`alpha≠1`, `theta≠0.5`). |
+| `groupX_alphaAI_pvalue`, `groupX_thetaAI_pvalue` | Evidence value for allelic imbalance within the group (`alpha≠1`, `theta≠0.5`). |
 | `delta_theta_mean`, `delta_thetaRaw_mean`, `delta_alpha_mean` | Differences between the groups, A minus B. |
-| `diffAI_pvalue` | Differential allelic imbalance between the groups, corrected by copy number. |
+| `diffAI_pvalue` | Evidence value for differential allelic imbalance between the groups, corrected by copy number. |
+| `diffAI_lfsr` | Local false sign rate, `diffAI_pvalue / 2`. |
+| `diffAI_bfdr` | Bayesian false sign rate of the list of genes at least as significant, within the test. |
 | `rope_value` | Posterior probability that the groups differ by less than 0.15 in `theta`. |
-| `analysis_flag` | `Success`; `pvalue0` when every posterior draw put the same group ahead, so the p-value is below what the draws can resolve; `Skipped_Low_Counts`; or the error. |
+| `analysis_flag` | `Success`; `pvalue0` when every posterior draw put the same group ahead, so `diffAI_pvalue` is reported as its upper bound `1/draws`; `Skipped_Low_Counts`; or the error. |
 
 ## Citation
 

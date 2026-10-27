@@ -65,6 +65,11 @@ gam.mles.data = function(x){
   return(c(ah,bh))
 }
 
+# BayesASE's evidence value: the two-sided posterior tail probability of the
+# draws x against the value `null`. When no draw falls on one side it is only
+# known to be below the resolution of the draws, so it is reported as 1/draws.
+tail_ev <- function(x, null) max(2 * min(mean(x > null), mean(x < null)), 1 / length(x))
+
 prior_empBayes_forbeta <- function(xs, ys, zs, cnv1, cnv2){
   bbeta_est = (xs + ys + zs) / (cnv1 + cnv2)
   bbeta_est[which(bbeta_est==0)]=0.1
@@ -91,6 +96,9 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     cnv1 <- as.numeric(gene_data$CN_H1)
     cnv2 <- as.numeric(gene_data$CN_H2)
     r <- t(sapply(seq_len(n_groups), function(i) c(mean(gene_data$H1_prior[xenv == i]), mean(gene_data$H2_prior[xenv == i]))))
+    # As in BayesASE, a category with no read in a whole group gets one read in
+    # its best-covered library, so that alpha stays away from 0 and infinity.
+    # It pulls the gene towards balance, which makes the test more conservative.
     for (grp_idx in 1:n_groups) {
       grp_mask <- which(xenv == grp_idx)
       current_xs <- xs[grp_mask]
@@ -120,18 +128,11 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     if (cond1 && cond2 && cond3 && cond4) {
       hyper_beta <- prior_empBayes_forbeta(xs, ys, zs, cnv1, cnv2)
       datastan <- c(datastan, list(a_beta = hyper_beta$a_beta, a_b_beta = hyper_beta$a_b_beta, b_b_beta = hyper_beta$b_b_beta))
-      max_try <- 15
-      n_try <- 0
-      repeat{
-        n_try <- n_try + 1
-        fit1 <- sampling(object=compiled_model, data=datastan, chains=1, warmup=nburnin, iter=nsim, refresh=0, init=starting_values, pars=c("alpha", "theta"), cores=1, open_progress=FALSE, seed=seed + n_try)
-        theta <- rstan::extract(fit1, pars = "theta")$theta
-        alpha <- rstan::extract(fit1, pars = "alpha")$alpha
-        pvalue_test <- 2 * min(mean(alpha[, 1] > alpha[, 2]), mean(alpha[, 1] < alpha[, 2]))
-        analysis_flag <- "Success"
-        if(pvalue_test > 0){break}
-        if(n_try >= max_try){analysis_flag <- "pvalue0"; break}
-      }
+      fit1 <- sampling(object=compiled_model, data=datastan, chains=1, warmup=nburnin, iter=nsim, refresh=0, init=starting_values, pars=c("alpha", "theta"), cores=1, open_progress=FALSE, seed=seed)
+      theta <- rstan::extract(fit1, pars = "theta")$theta
+      alpha <- rstan::extract(fit1, pars = "alpha")$alpha
+      # Every draw on the same side: diffAI_pvalue is the bound 1/draws.
+      analysis_flag <- if (all(alpha[, 1] > alpha[, 2]) || all(alpha[, 1] < alpha[, 2])) "pvalue0" else "Success"
     }else{theta <- matrix(NA_real_,n_groups,n_groups); alpha <- matrix(NA_real_,n_groups,n_groups); analysis_flag <- "Skipped_Low_Counts"}
     delta_threshold <- 0.15
     diff_distribution <- theta[, 1] - theta[, 2]
@@ -180,14 +181,14 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       groupB_thetaRaw_mean = mean(theta_raw[, 2]),
       groupB_thetaRaw_q025 = as.numeric(quantile(theta_raw[, 2], 0.025, na.rm=TRUE)),
       groupB_thetaRaw_q975 = as.numeric(quantile(theta_raw[, 2], 0.975, na.rm=TRUE)),
-      groupA_alphaAI_pvalue = 2 * min(mean(alpha[, 1] > 1), mean(alpha[, 1] < 1)),
-      groupA_thetaAI_pvalue = 2 * min(mean(theta[, 1] > 0.5), mean(theta[, 1] < 0.5)),
-      groupB_alphaAI_pvalue = 2 * min(mean(alpha[, 2] > 1), mean(alpha[, 2] < 1)),
-      groupB_thetaAI_pvalue = 2 * min(mean(theta[, 2] > 0.5), mean(theta[, 2] < 0.5)),
+      groupA_alphaAI_pvalue = tail_ev(alpha[, 1], 1),
+      groupA_thetaAI_pvalue = tail_ev(theta[, 1], 0.5),
+      groupB_alphaAI_pvalue = tail_ev(alpha[, 2], 1),
+      groupB_thetaAI_pvalue = tail_ev(theta[, 2], 0.5),
       delta_theta_mean = mean(theta[, 1]) - mean(theta[, 2]),
       delta_thetaRaw_mean = mean(theta_raw[, 1]) - mean(theta_raw[, 2]),
       delta_alpha_mean = mean(alpha[, 1]) - mean(alpha[, 2]),
-      diffAI_pvalue = 2 * min(mean(alpha[,1] > alpha[,2]), mean(alpha[,1] < alpha[,2])),
+      diffAI_pvalue = tail_ev(alpha[, 1] - alpha[, 2], 0),
       rope_value = mean(abs(diff_distribution) < delta_threshold),
       analysis_flag = analysis_flag
     )

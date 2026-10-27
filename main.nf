@@ -307,7 +307,8 @@ workflow {
             priors = PRIORS_WF.out.priors
         }
         if (params.counts) {
-            PREPARE_COMBINED_ASE_INPUT(sheet, requiredFile(params.counts, 'counts'), priors)
+            PREPARE_COMBINED_ASE_INPUT(sheet, requiredFile(params.counts, 'counts'), priors,
+                                       params.min_prior, params.max_misassignment)
             DIFFASE_WF(PREPARE_COMBINED_ASE_INPUT.out.ase_input)
         }
         else {
@@ -318,7 +319,7 @@ workflow {
                 copy_number = COPY_NUMBER_FROM_PLOIDY.out.copy_number
             }
             PREPARE_ASE_INPUT(sheet, requiredFile(params.hs_counts, 'hs_counts'),
-                              copy_number, priors, tx2gene)
+                              copy_number, priors, tx2gene, params.min_prior, params.max_misassignment)
             DIFFASE_WF(PREPARE_ASE_INPUT.out.ase_input)
         }
     }
@@ -347,7 +348,8 @@ workflow {
             priors = PRIORS_WF.out.priors
         }
         def hs_counts = transcriptLevel() ? RNA_WF.out.transcript_hs_counts : RNA_WF.out.gene_hs_counts
-        PREPARE_ASE_INPUT(sheet, hs_counts, copy_number, priors, REFERENCE_WF.out.tx2gene)
+        PREPARE_ASE_INPUT(sheet, hs_counts, copy_number, priors, REFERENCE_WF.out.tx2gene,
+                          params.min_prior, params.max_misassignment)
         DIFFASE_WF(PREPARE_ASE_INPUT.out.ase_input)
     }
 }

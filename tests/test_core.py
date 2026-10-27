@@ -447,6 +447,52 @@ def test_ase_input_keeps_libraries_without_reads(tmp_path: Path) -> None:
     assert (rows[("S2", "G1")]["CN_H1"], rows[("S2", "G1")]["H1_counts"]) == ("3.0", "0")
 
 
+def test_ase_input_leaves_out_genes_the_priors_cannot_inform(tmp_path: Path) -> None:
+    """min(r1, r2) at the floor, or simulated reads on the wrong haplotype, drop the gene."""
+    sheet = tmp_path / "samples.tsv"
+    sheet.write_text("sample\tcondition\tdna_id\trna\nS1\tA\tD1\tx.bam\nS2\tB\tD2\ty.bam\n")
+    counts = tmp_path / "counts.tsv"
+    counts.write_text("sample\tID\tH1\tH2\tNonHS\n" + "".join(
+        f"{sample}\t{gene}\t5\t5\t5\n" for sample in ("S1", "S2") for gene in ("GOOD", "ONEHAP", "SWAPPED")))
+    copy_number = tmp_path / "cn.tsv"
+    copy_number.write_text("sample\tID\tCN_H1\tCN_H2\n" + "".join(
+        f"{dna}\t{gene}\t1\t1\n" for dna in ("D1", "D2") for gene in ("GOOD", "ONEHAP", "SWAPPED")))
+    priors = tmp_path / "priors.tsv"
+    priors.write_text("ID\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\n"
+                      "GOOD\t0.8\t0.8\t0\t0.01\nONEHAP\t0.8\t0.001\t0\t0\nSWAPPED\t0.8\t0.8\t0.2\t0\n")
+    output = tmp_path / "ase_input.tsv"
+    run_script("prepare_ase_input.py", "--hs-counts", counts, "--samplesheet", sheet,
+               "--copy-number", copy_number, "--priors", priors, "--output", output)
+    assert {row["ID"] for row in read_tsv(output)} == {"GOOD"}
+
+    # The thresholds are parameters, and priors without misassignment columns have none.
+    priors.write_text("ID\tH1_prior\tH2_prior\nGOOD\t0.8\t0.8\nONEHAP\t0.8\t0.001\nSWAPPED\t0.8\t0.8\n")
+    run_script("prepare_ase_input.py", "--hs-counts", counts, "--samplesheet", sheet,
+               "--copy-number", copy_number, "--priors", priors, "--min-prior", "0.0001",
+               "--output", output)
+    assert {row["ID"] for row in read_tsv(output)} == {"GOOD", "ONEHAP", "SWAPPED"}
+
+
+def test_merged_results_carry_the_bayesian_fdr(tmp_path: Path) -> None:
+    """lfsr is half the evidence value; bfdr is the mean lfsr down the ranking, per test."""
+    header = "ID\ttest\tdiffAI_pvalue\tanalysis_flag\n"
+    shard1, shard2 = tmp_path / "s1.tsv", tmp_path / "s2.tsv"
+    shard1.write_text(header + "G1\tA_VS_B\t0.02\tSuccess\nG2\tA_VS_B\t0.2\tSuccess\nG5\tA_VS_B\tNA\tSkipped_Low_Counts\n")
+    shard2.write_text(header + "G3\tA_VS_B\t0.02\tSuccess\nG4\tC_VS_B\t0.6\tSuccess\n")
+    output = tmp_path / "merged.tsv"
+    run_script("merge_ase_results.py", "--inputs", shard1, shard2, "--output", output)
+    rows = read_tsv(output)
+    assert list(rows[0]) == ["ID", "test", "diffAI_pvalue", "diffAI_lfsr", "diffAI_bfdr", "analysis_flag"]
+    rows = {row["ID"]: row for row in rows}
+    assert float(rows["G1"]["diffAI_lfsr"]) == pytest.approx(0.01)
+    # G1 and G3 are tied, so they share the rate of the pair; G2 adds its own lfsr.
+    assert float(rows["G1"]["diffAI_bfdr"]) == float(rows["G3"]["diffAI_bfdr"]) == pytest.approx(0.01)
+    assert float(rows["G2"]["diffAI_bfdr"]) == pytest.approx((0.01 + 0.01 + 0.1) / 3)
+    # Each test has its own ranking, and genes that were not fitted have no rate.
+    assert float(rows["G4"]["diffAI_bfdr"]) == pytest.approx(0.3)
+    assert rows["G5"]["diffAI_bfdr"] == "NA"
+
+
 def test_split_ase_input_multiple_contrasts(tmp_path: Path) -> None:
     header = ("sample\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts"
               "\tCN_H1\tCN_H2\tH1_prior\tH2_prior\n")

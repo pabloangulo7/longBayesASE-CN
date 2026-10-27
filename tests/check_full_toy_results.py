@@ -30,7 +30,7 @@ required = {
     "groupA_alphaAI_pvalue", "groupA_thetaAI_pvalue",
     "groupB_alphaAI_pvalue", "groupB_thetaAI_pvalue",
     "groupA_thetaRaw_mean", "groupB_thetaRaw_mean", "delta_thetaRaw_mean",
-    "diffAI_pvalue", "rope_value", "analysis_flag",
+    "diffAI_pvalue", "diffAI_lfsr", "diffAI_bfdr", "rope_value", "analysis_flag",
 }
 assert required.issubset(results["GBASE"])
 assert results["GBASE"]["analysis_flag"] in {"Success", "pvalue0"}

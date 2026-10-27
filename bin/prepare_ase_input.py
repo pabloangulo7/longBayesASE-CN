@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Join haplotype-specific counts, copy number, priors and sample metadata."""
+"""Join haplotype-specific counts, copy number, priors and sample metadata.
+
+Genes whose mapping priors cannot inform the model are left out here: those
+whose reads rarely cover a heterozygous site on one of the haplotypes
+(min(r1, r2) <= --min-prior), and those whose simulated reads come out on the
+wrong haplotype more often than --max-misassignment, which the model has no
+term for.
+"""
 
 from __future__ import annotations
 
@@ -20,17 +27,25 @@ def load_samples(path: str) -> dict[str, dict[str, str]]:
         return {row["sample"]: row for row in csv.DictReader(handle, delimiter="\t")}
 
 
-def load_priors(path: str) -> dict[str, tuple[float, float]]:
+def load_priors(path: str) -> dict[str, tuple[float, float, float]]:
+    """r1, r2 and the larger of the two misassignment rates of every gene.
+
+    Priors supplied without misassignment columns are taken to have none.
+    """
     priors = {}
     with open(path) as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        if not {"ID", "H1_prior", "H2_prior"}.issubset(reader.fieldnames or []):
+        fields = set(reader.fieldnames or [])
+        if not {"ID", "H1_prior", "H2_prior"}.issubset(fields):
             raise ValueError("priors require columns: ID, H1_prior, H2_prior")
+        has_misassignment = {"H1_misassignment", "H2_misassignment"}.issubset(fields)
         for row in reader:
-            values = float(row["H1_prior"]), float(row["H2_prior"])
-            if not all(0 < value < 1 for value in values):
+            r1, r2 = float(row["H1_prior"]), float(row["H2_prior"])
+            if not 0 < r1 < 1 or not 0 < r2 < 1:
                 raise ValueError(f"gene {row['ID']}: priors must be strictly between 0 and 1")
-            priors[row["ID"]] = values
+            misassignment = (max(float(row["H1_misassignment"]), float(row["H2_misassignment"]))
+                             if has_misassignment else 0.0)
+            priors[row["ID"]] = r1, r2, misassignment
     return priors
 
 
@@ -59,6 +74,10 @@ def main() -> None:
     parser.add_argument("--copy-number")
     parser.add_argument("--priors", required=True)
     parser.add_argument("--tx2gene", help="used when the counts are transcript-level")
+    parser.add_argument("--min-prior", type=float, default=0.01,
+                        help="genes with min(r1, r2) at or below this are left out")
+    parser.add_argument("--max-misassignment", type=float, default=0.05,
+                        help="genes whose simulated reads land on the wrong haplotype more often are left out")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     if args.hs_counts and not args.copy_number:
@@ -66,6 +85,9 @@ def main() -> None:
 
     samples = load_samples(args.samplesheet)
     priors = load_priors(args.priors)
+    uninformative = {gene for gene, (r1, r2, _) in priors.items() if min(r1, r2) <= args.min_prior}
+    misassigned = {gene for gene, (_, _, rate) in priors.items()
+                   if rate > args.max_misassignment} - uninformative
     copy_number = load_copy_number(args.copy_number) if args.copy_number else {}
     tx2gene = load_tx2gene(args.tx2gene)
 
@@ -84,7 +106,7 @@ def main() -> None:
         return copy_number.get((samples[sample]["dna_id"], tx2gene.get(gene, gene)))
 
     rows_out = []
-    missing_cn, missing_prior = set(), set()
+    missing_cn, missing_prior, filtered = set(), set(), set()
     libraries: set[str] = set()
     kept_cn: dict[tuple[str, str], tuple[float, float]] = {}
     with open(args.counts or args.hs_counts) as handle:
@@ -99,6 +121,9 @@ def main() -> None:
             if sample not in samples:
                 raise ValueError(f"HS counts have no samplesheet row: {sample}")
             libraries.add(sample)
+            if gene in uninformative or gene in misassigned:
+                filtered.add(gene)
+                continue
             cn = ((float(row["CN_H1"]), float(row["CN_H2"])) if args.counts
                   else table_copy_number(sample, gene))
             if cn is None:
@@ -131,6 +156,8 @@ def main() -> None:
     print(
         f"[prepare_ase_input] dropped {len(missing_cn | missing_prior)} genes: "
         f"{len(missing_cn)} missing copy number, {len(missing_prior)} missing prior; "
+        f"left out {len(filtered & uninformative)} with min(r1, r2) <= {args.min_prior} and "
+        f"{len(filtered & misassigned)} with misassignment > {args.max_misassignment}; "
         f"added {filled} zero-count rows, {unfillable} left out for lack of copy number",
         file=sys.stderr,
     )

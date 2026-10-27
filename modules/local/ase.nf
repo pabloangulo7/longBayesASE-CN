@@ -8,6 +8,8 @@ process PREPARE_ASE_INPUT {
     path copy_number
     path priors
     path tx2gene
+    val min_prior
+    val max_misassignment
 
     output:
     path 'ASE_input.tsv', emit: ase_input
@@ -20,6 +22,8 @@ process PREPARE_ASE_INPUT {
         --copy-number ${copy_number} \
         --priors ${priors} \
         --tx2gene ${tx2gene} \
+        --min-prior ${min_prior} \
+        --max-misassignment ${max_misassignment} \
         --output ASE_input.tsv
     """
 
@@ -37,6 +41,8 @@ process PREPARE_COMBINED_ASE_INPUT {
     path samplesheet
     path counts
     path priors
+    val min_prior
+    val max_misassignment
 
     output:
     path 'ASE_input.tsv', emit: ase_input
@@ -47,6 +53,8 @@ process PREPARE_COMBINED_ASE_INPUT {
         --samplesheet ${samplesheet} \
         --counts ${counts} \
         --priors ${priors} \
+        --min-prior ${min_prior} \
+        --max-misassignment ${max_misassignment} \
         --output ASE_input.tsv
     """
 
