@@ -227,7 +227,7 @@ workflow DIFFASE_WF {
     SPLIT_ASE_INPUT(ase_input, params.contrast, params.ase_shards)
     RUN_ASE_SHARD(SPLIT_ASE_INPUT.out.shards.flatten(), COMPILE_ASE_MODEL.out.model,
                   params.ase_iterations, params.ase_warmup, params.seed)
-    MERGE_ASE_RESULTS(RUN_ASE_SHARD.out.results.collect(), ase_input, params.min_prior, params.max_misassignment)
+    MERGE_ASE_RESULTS(RUN_ASE_SHARD.out.results.collect(), ase_input, params.min_prior)
 }
 
 

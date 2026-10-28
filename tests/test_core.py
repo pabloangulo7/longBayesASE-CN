@@ -138,15 +138,18 @@ def test_mapping_priors(tmp_path: Path) -> None:
     header = "ID\tH1\tH1_multimapping\tH2\tH2_multimapping\tNonHS\tNonHS_multimapping\n"
     h1 = tmp_path / "h1.tsv"
     h2 = tmp_path / "h2.tsv"
-    h1.write_text(header + "G1\t80\t0\t0\t0\t20\t0\nGLOW\t3\t0\t0\t0\t1\t0\n")
-    h2.write_text(header + "G1\t0\t0\t75\t0\t25\t0\nGLOW\t0\t0\t3\t0\t1\t0\n")
-    output = tmp_path / "priors.tsv"
-    run_script("build_priors.py", "--hap1-counts", h1, "--hap2-counts", h2, "--min-reads", 10, "--output", output)
-    rows = read_tsv(output)
+    h1.write_text(header + "G1\t80\t0\t5\t0\t15\t0\nGLOW\t3\t0\t0\t0\t1\t0\n")
+    h2.write_text(header + "G1\t0\t10\t75\t0\t15\t0\nGLOW\t0\t0\t3\t0\t1\t0\n")
+    output, misassignment, stats = (tmp_path / name for name in ("priors.tsv", "mis.tsv", "stats.tsv"))
+    run_script("build_priors.py", "--hap1-counts", h1, "--hap2-counts", h2, "--min-reads", 10,
+               "--output", output, "--misassignment", misassignment, "--stats", stats)
     # GLOW rests on 4 simulated reads per haplotype, under the minimum of 10.
-    assert [row["ID"] for row in rows] == ["G1"]
-    assert float(rows[0]["H1_prior"]) == 0.8
-    assert float(rows[0]["H2_prior"]) == 0.75
+    assert read_tsv(output) == [{"ID": "G1", "H1_prior": "0.8", "H2_prior": "0.75"}]
+    assert read_tsv(misassignment) == [{"ID": "G1", "n_hap1": "100", "n_hap2": "100",
+                                        "H1_misassignment": "0.05", "H2_misassignment": "0.1"}]
+    summary = {row["metric"]: row["value"] for row in read_tsv(stats)}
+    assert summary["features_simulated"] == "2" and summary["features_with_prior"] == "1"
+    assert summary["H2_reads_called_NonHS"] == "0.15"
 
 
 def test_dna_copy_multimapping_classification(tmp_path: Path) -> None:
@@ -434,38 +437,18 @@ def test_ase_input_keeps_libraries_without_reads(tmp_path: Path) -> None:
                "--copy-number", copy_number, "--priors", priors, "--output", output)
     rows = {(row["sample"], row["ID"]): row for row in read_tsv(output)}
     assert len(rows) == 4
+    assert list(rows[("S1", "G1")]) == ["sample", "group", "ID", "H1_counts", "H2_counts", "NonHS_counts",
+                                        "CN_H1", "CN_H2", "H1_prior", "H2_prior"]
     filled = rows[("S2", "G1")]
     assert (filled["H1_counts"], filled["H2_counts"], filled["NonHS_counts"]) == ("0", "0", "0")
     assert (filled["CN_H1"], filled["CN_H2"], filled["group"]) == ("2.0", "1.0", "B")
 
 
 
-def test_ase_input_carries_the_misassignment_rates(tmp_path: Path) -> None:
-    """The priors' misassignment goes into the ASE input, 0 when the priors have none."""
-    sheet = tmp_path / "samples.tsv"
-    sheet.write_text("sample\tcondition\tdna_id\trna\nS1\tA\tD1\tx.bam\n")
-    counts = tmp_path / "counts.tsv"
-    counts.write_text("sample\tID\tH1\tH2\tNonHS\nS1\tG1\t5\t3\t2\n")
-    copy_number = tmp_path / "cn.tsv"
-    copy_number.write_text("sample\tID\tCN_H1\tCN_H2\nD1\tG1\t1\t1\n")
-    priors = tmp_path / "priors.tsv"
-    output = tmp_path / "ase_input.tsv"
-    for table, expected in (("ID\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\nG1\t0.8\t0.8\t0.01\t0.02\n",
-                             ("0.01", "0.02")),
-                            ("ID\tH1_prior\tH2_prior\nG1\t0.8\t0.8\n", ("0.0", "0.0"))):
-        priors.write_text(table)
-        run_script("prepare_ase_input.py", "--hs-counts", counts, "--samplesheet", sheet,
-                   "--copy-number", copy_number, "--priors", priors, "--output", output)
-        row = read_tsv(output)[0]
-        assert (row["H1_misassignment"], row["H2_misassignment"]) == expected
-
-
-def test_merge_ase_results_flags_features_the_priors_cannot_inform(tmp_path: Path) -> None:
-    """min(r1, r2) at the floor, or simulated reads on the wrong haplotype, flag the feature."""
-    header = ("sample\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2"
-              "\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\n")
-    priors = {"GOOD": "0.8\t0.8\t0\t0.01", "ONEHAP": "0.8\t0.001\t0\t0",
-              "SWAPPED": "0.8\t0.8\t0.2\t0", "BOTH": "0.001\t0.8\t0\t0.3"}
+def test_merge_ase_results_flags_features_with_uninformative_priors(tmp_path: Path) -> None:
+    """Every feature is reported; min(r1, r2) at the floor flags it."""
+    header = "sample\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2\tH1_prior\tH2_prior\n"
+    priors = {"GOOD": "0.8\t0.8", "ONEHAP": "0.8\t0.001"}
     ase_input = tmp_path / "ASE_input.tsv"
     ase_input.write_text(header + "".join(
         f"{group}{rep}\t{group}\t{gene}\t20\t20\t10\t1\t1\t{values}\n"
@@ -479,9 +462,8 @@ def test_merge_ase_results_flags_features_the_priors_cannot_inform(tmp_path: Pat
                    "--output", output, *options)
         return {row["ID"]: row["filter_flag"] for row in read_tsv(output)}
 
-    assert flags() == {"GOOD": "pass", "ONEHAP": "low_prior", "SWAPPED": "misassignment",
-                       "BOTH": "low_prior;misassignment"}
-    assert set(flags("--min-prior", 0.0001, "--max-misassignment", 0.5).values()) == {"pass"}
+    assert flags() == {"GOOD": "pass", "ONEHAP": "low_prior"}
+    assert flags("--min-prior", 0.0001) == {"GOOD": "pass", "ONEHAP": "pass"}
 
 
 def test_split_ase_input_multiple_contrasts(tmp_path: Path) -> None:

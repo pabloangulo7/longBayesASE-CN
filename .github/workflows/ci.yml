@@ -85,7 +85,9 @@ jobs:
           test -s full-test-results/rna/transcript_HS_counts.tsv
           test -s full-test-results/rna/gene_quant.tsv
           test -s full-test-results/rna/transcript_quant.tsv
-          test -s full-test-results/rna/mapping_priors.gene.tsv
+          test -s full-test-results/priors/mapping_priors.gene.tsv
+          test -s full-test-results/priors/mapping_priors.gene.misassignment.tsv
+          test -s full-test-results/priors/mapping_priors.gene.stats.tsv
           test -s full-test-results/rna/ASE_input.gene.tsv
           test -z "$(find full-test-results -name '*read_intervals*')"
 
@@ -98,7 +100,7 @@ jobs:
             --gff3 tests/data/diploid.gff3 \
             --outdir rna-test-results
           test -s rna-test-results/rna/ASE_input.gene.tsv
-          test -s rna-test-results/rna/mapping_priors.gene.tsv
+          test -s rna-test-results/priors/mapping_priors.gene.tsv
           test -s rna-test-results/dna/gene_copy_numbers.tsv
           test ! -e rna-test-results/diffase
 
@@ -113,7 +115,7 @@ jobs:
             --ase_shards 1 \
             --outdir multi-test-results
           test -s multi-test-results/diffase/diffASE_results.tsv
-          test -s multi-test-results/rna/mapping_priors.transcript.tsv
+          test -s multi-test-results/priors/mapping_priors.transcript.tsv
           test -s multi-test-results/rna/ASE_input.transcript.tsv
 
       - name: Samplesheet ploidy needs only the GFF3
@@ -141,7 +143,7 @@ jobs:
             --contrast ANEUPLOID:WT \
             --ase_shards 1 \
             --outdir intervals-test-results
-          test -s intervals-test-results/diffase/mapping_priors.gene.tsv
+          test -s intervals-test-results/priors/mapping_priors.gene.tsv
           test ! -e intervals-test-results/rna
           test -s intervals-test-results/diffase/diffASE_results.tsv
 

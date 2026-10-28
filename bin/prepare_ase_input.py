@@ -2,8 +2,6 @@
 """Join haplotype-specific counts, copy number and mapping priors into the ASE input.
 
 One row per library and feature, with the library's condition as its group.
-The misassignment rates of the priors are carried along so that the diffASE
-step can leave out the features they make unreliable.
 """
 
 from __future__ import annotations
@@ -25,22 +23,18 @@ def load_samples(path: str) -> dict[str, dict[str, str]]:
         return {row["sample"]: row for row in csv.DictReader(handle, delimiter="\t")}
 
 
-def load_priors(path: str) -> dict[str, tuple[float, float, float, float]]:
-    """r1, r2 and the two misassignment rates of every feature (0 when the table has none)."""
+def load_priors(path: str) -> dict[str, tuple[float, float]]:
+    """r1 and r2 of every feature."""
     priors = {}
     with open(path) as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        fields = set(reader.fieldnames or [])
-        if not {"ID", "H1_prior", "H2_prior"}.issubset(fields):
+        if not {"ID", "H1_prior", "H2_prior"}.issubset(reader.fieldnames or []):
             raise ValueError("priors require columns: ID, H1_prior, H2_prior")
-        has_misassignment = {"H1_misassignment", "H2_misassignment"}.issubset(fields)
         for row in reader:
             r1, r2 = float(row["H1_prior"]), float(row["H2_prior"])
             if not 0 < r1 < 1 or not 0 < r2 < 1:
                 raise ValueError(f"feature {row['ID']}: priors must be strictly between 0 and 1")
-            wrong = ((float(row["H1_misassignment"]), float(row["H2_misassignment"]))
-                     if has_misassignment else (0.0, 0.0))
-            priors[row["ID"]] = r1, r2, *wrong
+            priors[row["ID"]] = r1, r2
     return priors
 
 
@@ -79,12 +73,11 @@ def main() -> None:
 
     def model_row(sample: str, feature: str, counts: tuple[int, int, int],
                   cn: tuple[float, float]) -> dict[str, object]:
-        r1, r2, wrong1, wrong2 = priors[feature]
+        r1, r2 = priors[feature]
         return {
-            "sample": sample, "dna_id": samples[sample]["dna_id"], "group": samples[sample]["condition"],
-            "ID": feature, "H1_counts": counts[0], "H2_counts": counts[1], "NonHS_counts": counts[2],
+            "sample": sample, "group": samples[sample]["condition"], "ID": feature,
+            "H1_counts": counts[0], "H2_counts": counts[1], "NonHS_counts": counts[2],
             "CN_H1": cn[0], "CN_H2": cn[1], "H1_prior": r1, "H2_prior": r2,
-            "H1_misassignment": wrong1, "H2_misassignment": wrong2,
         }
 
     rows_out = []

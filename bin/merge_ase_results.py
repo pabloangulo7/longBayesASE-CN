@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Merge the ASE shard results and flag the features the priors make unreliable.
+"""Merge the ASE shard results and flag the features with uninformative priors.
 
-Every feature is fitted; filter_flag marks those whose result should not be
-trusted: low_prior when min(r1, r2) <= --min-prior (few of its reads cover a
-heterozygous site on one haplotype, so r1/r2 and the bias correction are
-poorly determined), and misassignment when simulated reads come out on the
-wrong haplotype more often than --max-misassignment, which the model has no
-term for. pass otherwise.
+Every feature is fitted; filter_flag is low_prior when min(r1, r2) <= --min-prior,
+because few reads of one haplotype cover a heterozygous site, so its counts
+barely inform alpha and a small error in r1 or r2 becomes a large error in the
+bias correction r1/r2. pass otherwise.
 """
 
 from __future__ import annotations
@@ -15,20 +13,12 @@ import argparse
 import csv
 
 
-def load_flags(path: str, min_prior: float, max_misassignment: float) -> dict[str, str]:
-    flags = {}
+def load_flags(path: str, min_prior: float) -> dict[str, str]:
     with open(path) as handle:
-        for row in csv.DictReader(handle, delimiter="\t"):
-            if row["ID"] in flags:
-                continue
-            reasons = []
-            if min(float(row["H1_prior"]), float(row["H2_prior"])) <= min_prior:
-                reasons.append("low_prior")
-            wrong = max(float(row.get("H1_misassignment") or 0), float(row.get("H2_misassignment") or 0))
-            if wrong > max_misassignment:
-                reasons.append("misassignment")
-            flags[row["ID"]] = ";".join(reasons) or "pass"
-    return flags
+        return {
+            row["ID"]: "low_prior" if min(float(row["H1_prior"]), float(row["H2_prior"])) <= min_prior else "pass"
+            for row in csv.DictReader(handle, delimiter="\t")
+        }
 
 
 def main() -> None:
@@ -36,10 +26,9 @@ def main() -> None:
     parser.add_argument("--inputs", nargs="+", required=True)
     parser.add_argument("--ase-input", required=True)
     parser.add_argument("--min-prior", type=float, default=0.01)
-    parser.add_argument("--max-misassignment", type=float, default=0.05)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    flags = load_flags(args.ase_input, args.min_prior, args.max_misassignment)
+    flags = load_flags(args.ase_input, args.min_prior)
     rows = []
     fields = None
     for path in args.inputs:

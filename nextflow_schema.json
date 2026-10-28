@@ -38,7 +38,6 @@
         "prior_reads": {"type": "integer", "minimum": 1, "default": 2000},
         "min_prior_reads": {"type": "integer", "minimum": 1, "default": 10},
         "min_prior": {"type": "number", "minimum": 0, "exclusiveMaximum": 1, "default": 0.01},
-        "max_misassignment": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.05},
         "ase_shards": {"type": "integer", "minimum": 1, "default": 100},
         "ase_iterations": {"type": "integer", "minimum": 20, "default": 100000},
         "ase_warmup": {"type": "integer", "minimum": 1, "default": 10000},

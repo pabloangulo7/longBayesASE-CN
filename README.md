@@ -109,13 +109,15 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 | Output | Content |
 |---|---|
 | `rna/gene_HS_counts.tsv`, `rna/transcript_HS_counts.tsv` | H1, H2 and NonHS reads per library and feature. |
-| `rna/mapping_priors.gene.tsv` | Mapping priors of each feature (see [Mapping priors](#mapping-priors)). |
 | `rna/ASE_input.gene.tsv` | Input of the differential ASE step: counts, copy number and priors per library and feature. |
 | `rna/gene_quant.tsv`, `rna/transcript_quant.tsv` | Oarfish expression, both haplotypes summed, for differential expression and isoform usage. |
 | `rna/counts/` | Reads per category and QC, per library. |
 | `rna/oarfish/` | Oarfish output per library. |
+| `priors/mapping_priors.gene.tsv` | `r1` and `r2` of each feature (see [Mapping priors](#mapping-priors)). |
+| `priors/mapping_priors.gene.misassignment.tsv` | QC per feature: simulated reads per haplotype (`n_hap1`, `n_hap2`) and the fraction called on the wrong haplotype (`H1_misassignment`, `H2_misassignment`). |
+| `priors/mapping_priors.gene.stats.tsv` | QC summary of the simulation: features with a prior, median priors and misassignment, and the fraction of the reads of each haplotype called H1, H2 and NonHS. |
 
-With `--level transcript` the priors and the ASE input are written per transcript (`mapping_priors.transcript.tsv`, `ASE_input.transcript.tsv`). The copy number in the ASE input comes from `--copy_number` or from the samplesheet `ploidy` column (1:1 where neither gives it).
+With `--level transcript` the priors and the ASE input are written per transcript (`mapping_priors.transcript.*`, `ASE_input.transcript.tsv`). The copy number in the ASE input comes from `--copy_number` or from the samplesheet `ploidy` column (1:1 where neither gives it).
 
 ### Differential ASE
 
@@ -137,7 +139,7 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
   --samplesheet samples.tsv \
   --hs_counts results/rna/gene_HS_counts.tsv \
   --copy_number results/dna/gene_copy_numbers.tsv \
-  --priors results/rna/mapping_priors.gene.tsv \
+  --priors results/priors/mapping_priors.gene.tsv \
   --fasta assembly.fa --gff3 assembly.gff3 \
   --contrast Aneuploid:Control \
   --outdir results
@@ -152,7 +154,8 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 | Output | Content |
 |---|---|
 | `diffase/diffASE_results.tsv` | One row per feature and contrast (see [Result columns](#result-columns)). |
-| `diffase/ASE_input.gene.tsv`, `diffase/mapping_priors.gene.tsv` | The model input and priors, when this step builds them. |
+| `diffase/ASE_input.gene.tsv` | The model input, when this step builds it. |
+| `priors/` | The priors and their QC, when this step simulates them. |
 
 The small table in `examples/toy_ase/` runs the step without sequencing data:
 
@@ -179,7 +182,6 @@ nextflow run . -profile conda --step diffase \
 | `--min_prior_reads` | `10` | Minimum simulated reads per haplotype for a feature to get a prior. |
 | **diffASE** | | |
 | `--min_prior` | `0.01` | Features with `min(r1, r2)` at or below this are flagged `low_prior`. |
-| `--max_misassignment` | `0.05` | Features whose simulated reads go to the wrong haplotype more often than this are flagged `misassignment`. |
 | `--ase_shards` | `100` | Groups of features fitted in parallel, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per feature. |
 | `--ase_warmup` | `10000` | Stan warmup iterations. |
@@ -201,7 +203,7 @@ DNA reads are classified in the same way. Only genes with a single annotated cop
 
 ### Mapping priors
 
-`r1` and `r2` are the probabilities that a read from H1, or from H2, is recognised as haplotype-specific. They depend on whether the read covers a heterozygous site, so on the isoforms and read positions of each feature. For a sample of the real reads, the same interval is cut from the H1 and the H2 copy of its transcript, which replicates the read coverage of each feature on both haplotypes. These simulated reads are aligned and classified like the real ones: `r1` is the fraction of H1 reads called H1, and `r2` the same for H2. The reads called on the wrong haplotype give `H1_misassignment` and `H2_misassignment`. Only read positions are used, pooled over the libraries, so all conditions share the same priors.
+`r1` and `r2` are the probabilities that a read from H1, or from H2, is recognised as haplotype-specific. They depend on whether the read covers a heterozygous site, so on the isoforms and read positions of each feature. For a sample of the real reads, the same interval is cut from the H1 and the H2 copy of its transcript, which replicates the read coverage of each feature on both haplotypes. These simulated reads are aligned and classified like the real ones: `r1` is the fraction of H1 reads called H1, and `r2` the same for H2. The fraction called on the wrong haplotype is reported for QC only; the model assumes it is negligible. Only read positions are used, pooled over the libraries, so all conditions share the same priors.
 
 ### Model
 
@@ -219,12 +221,7 @@ thetaRaw = CN_H1 × theta / (CN_H1 × theta + CN_H2 × (1 - theta))
 
 The priors are those of BayesASE: `alpha ~ lognormal(0, 0.5)`, a gamma hierarchy for library size `beta`, and inverse-gamma(2.01, 0.05) overdispersion. Each feature is fitted on its own with Stan (one chain). Where a group has no read in a category, one read is added to its best-covered library, as in BayesASE, to keep `alpha` finite.
 
-Every feature is fitted, and `filter_flag` marks those whose priors make the result unreliable:
-
-- `low_prior` when `min(r1, r2) <= --min_prior`: few reads of one haplotype cover a heterozygous site, so its counts barely inform `alpha`, and a small error in `r1` or `r2` becomes a large error in the bias correction `r1/r2`.
-- `misassignment` when either misassignment rate is above `--max_misassignment`: the model assumes that a read called H1 comes from H1, and contamination from the other haplotype scales with its copy number, so it can look like a difference between groups with different copy number.
-
-Features flagged with both get `low_prior;misassignment`; the rest get `pass`.
+Every feature is fitted. `filter_flag` is `low_prior` when `min(r1, r2) <= --min_prior`, and `pass` otherwise: in a `low_prior` feature few reads of one haplotype cover a heterozygous site, so its counts barely inform `alpha`, and a small error in `r1` or `r2` becomes a large error in the bias correction `r1/r2`.
 
 ### Tests
 
@@ -254,7 +251,7 @@ It is the smallest level at which the central credible interval of `alpha_A - al
 | `diffAI_pvalue` | Evidence of differential allelic imbalance, corrected by copy number. |
 | `rope_value` | Probability that the difference in `theta` is smaller than full dosage compensation. |
 | `analysis_flag` | `Success`, `pvalue0`, `Skipped_Low_Counts`, or the error. |
-| `filter_flag` | `pass`, `low_prior` and/or `misassignment` (see [Model](#model)). |
+| `filter_flag` | `pass` or `low_prior` (see [Model](#model)). |
 
 ## Citation
 

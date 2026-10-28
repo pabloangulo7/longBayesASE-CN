@@ -35,6 +35,7 @@ process BUILD_MAPPING_PRIORS {
 
     output:
     path "mapping_priors.${level}.tsv", emit: priors
+    path "mapping_priors.${level}.{misassignment,stats}.tsv", emit: qc
 
     script:
     """
@@ -42,11 +43,15 @@ process BUILD_MAPPING_PRIORS {
         --hap1-counts ${hap1_counts} \
         --hap2-counts ${hap2_counts} \
         --min-reads ${min_reads} \
-        --output mapping_priors.${level}.tsv
+        --output mapping_priors.${level}.tsv \
+        --misassignment mapping_priors.${level}.misassignment.tsv \
+        --stats mapping_priors.${level}.stats.tsv
     """
 
     stub:
     """
-    printf 'ID\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\tn_hap1\tn_hap2\nFEATURE1\t0.8\t0.8\t0\t0\t100\t100\n' > mapping_priors.${level}.tsv
+    printf 'ID\tH1_prior\tH2_prior\nFEATURE1\t0.8\t0.8\n' > mapping_priors.${level}.tsv
+    printf 'ID\tn_hap1\tn_hap2\tH1_misassignment\tH2_misassignment\nFEATURE1\t100\t100\t0\t0\n' > mapping_priors.${level}.misassignment.tsv
+    printf 'metric\tvalue\nfeatures_with_prior\t1\n' > mapping_priors.${level}.stats.tsv
     """
 }

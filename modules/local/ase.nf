@@ -26,7 +26,7 @@ process PREPARE_ASE_INPUT {
 
     stub:
     """
-    printf 'sample\tdna_id\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2\tH1_prior\tH2_prior\tH1_misassignment\tH2_misassignment\nA1\tDNA1\tA\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\t0\t0\nB1\tDNA1\tB\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\t0\t0\n' > ASE_input.${level}.tsv
+    printf 'sample\tgroup\tID\tH1_counts\tH2_counts\tNonHS_counts\tCN_H1\tCN_H2\tH1_prior\tH2_prior\nA1\tA\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\nB1\tB\tGENE1\t10\t10\t5\t1\t1\t0.8\t0.8\n' > ASE_input.${level}.tsv
     """
 }
 
@@ -126,7 +126,6 @@ process MERGE_ASE_RESULTS {
     path results
     path ase_input
     val min_prior
-    val max_misassignment
 
     output:
     path 'diffASE_results.tsv', emit: results
@@ -137,7 +136,6 @@ process MERGE_ASE_RESULTS {
         --inputs ${results} \
         --ase-input ${ase_input} \
         --min-prior ${min_prior} \
-        --max-misassignment ${max_misassignment} \
         --output diffASE_results.tsv
     """
 
