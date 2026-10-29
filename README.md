@@ -117,6 +117,7 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 | `priors/mapping_priors.gene.tsv` | `r1` and `r2` of each feature (see [Mapping priors](#mapping-priors)). |
 | `priors/mapping_priors.gene.misassignment.tsv` | QC per feature: simulated reads per haplotype (`n_hap1`, `n_hap2`) and the fraction called on the wrong haplotype (`H1_misassignment`, `H2_misassignment`). |
 | `priors/mapping_priors.gene.stats.tsv` | QC summary of the simulation: features with a prior, median priors and misassignment, and the fraction of the reads of each haplotype called H1, H2 and NonHS. |
+| `priors/simulated_counts/` | Counts and QC of the reads simulated from H1 (`SIM_HAP1`) and H2 (`SIM_HAP2`), as `rna/counts/` for the real libraries. |
 
 With `--level transcript` the priors and the ASE input are written per transcript (`mapping_priors.transcript.*`, `ASE_input.transcript.tsv`). The copy number in the ASE input comes from `--copy_number` or from the samplesheet `ploidy` column (1:1 where neither gives it).
 

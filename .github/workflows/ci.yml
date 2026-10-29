@@ -88,6 +88,8 @@ jobs:
           test -s full-test-results/priors/mapping_priors.gene.tsv
           test -s full-test-results/priors/mapping_priors.gene.misassignment.tsv
           test -s full-test-results/priors/mapping_priors.gene.stats.tsv
+          test -s full-test-results/priors/simulated_counts/SIM_HAP1.gene_HS_counts.tsv
+          test -z "$(find full-test-results/rna -name 'SIM_*')"
           test -s full-test-results/rna/ASE_input.gene.tsv
           test -z "$(find full-test-results -name '*read_intervals*')"
 
