@@ -192,7 +192,7 @@ process COMPUTE_COPY_NUMBER {
 
     stub:
     """
-    printf 'sample\tID\tChrom\tCN_H1\tCN_H2\nDNA1\tGENE1\tchr1\t1\t1\n' > gene_copy_numbers.tsv
+    printf 'sample\tID\tChrom_H1\tChrom_H2\tCN_H1\tCN_H2\nDNA1\tGENE1\tchr1\tchr1\t1\t1\n' > gene_copy_numbers.tsv
     printf 'sample\tChrom\tbaseline_depth\tbaseline_genes\tchromosome_singleton_genes\thaplotype_informative_genes\texpected_ploidy\tChrom_CN\tratio\tchanged\tdirection\tH1_prop\tH2_prop\tCN_H1\tCN_H2\nDNA1\tchr1\t10\t1\t1\t1\tFalse\t2\t1.0\tFalse\tnone\t0.5\t0.5\t1\t1\n' > copy_number.qc.tsv
     """
 }
@@ -218,6 +218,6 @@ process COPY_NUMBER_FROM_PLOIDY {
 
     stub:
     """
-    printf 'sample\tID\tChrom\tCN_H1\tCN_H2\nDNA1\tGENE1\tchr1\t1\t1\n' > gene_copy_numbers.tsv
+    printf 'sample\tID\tChrom_H1\tChrom_H2\tCN_H1\tCN_H2\nDNA1\tGENE1\tchr1\tchr1\t1\t1\n' > gene_copy_numbers.tsv
     """
 }

@@ -9,6 +9,7 @@ the identifiers match the ones BUILD_ANNOTATION_BUNDLE produces.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 from annotation_bundle import chromosome_label, copy_identity, first_attr
@@ -16,11 +17,15 @@ from common import parse_gff_attributes
 
 
 TRANSCRIPT_TYPES = {"transcript", "mrna"}
+HAPLOTYPE_RE = re.compile(r"[_-]hap([12])(?:$|[_-])", re.IGNORECASE)
 
 
-def parse(path: str) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[str, str]]]:
-    """Return {gene_id: (chromosome, name)} and {transcript_id: (gene_id, name)}."""
-    genes: dict[str, tuple[str, str]] = {}
+def parse(path: str) -> tuple[dict[str, dict], dict[str, tuple[str, str]]]:
+    """Return {gene_id: {name, hap1, hap2}} and {transcript_id: (gene_id, name)}.
+
+    hap1 and hap2 hold (copy, chromosome) of the primary copy on each haplotype.
+    """
+    genes: dict[str, dict] = {}
     transcripts: dict[str, tuple[str, str]] = {}
     with open(path) as handle:
         for line_number, line in enumerate(handle, 1):
@@ -37,9 +42,13 @@ def parse(path: str) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[str, s
                 raw = first_attr(attrs, "gene_id", "ID")
                 if not raw:
                     continue
-                base, _copy = copy_identity(raw, attrs)
-                genes.setdefault(base, (chromosome_label(fields[0]),
-                                        first_attr(attrs, "gene_name", "Name") or base))
+                base, copy = copy_identity(raw, attrs)
+                haplotype = HAPLOTYPE_RE.search(fields[0])
+                gene = genes.setdefault(base, {"name": first_attr(attrs, "gene_name", "Name") or base})
+                if haplotype:
+                    hap = f"hap{haplotype.group(1)}"
+                    gene[hap] = min(gene.get(hap, (copy, chromosome_label(fields[0]))),
+                                    (copy, chromosome_label(fields[0])))
             else:
                 raw_tx = first_attr(attrs, "transcript_id", "ID")
                 raw_gene = first_attr(attrs, "gene_id", "Parent")
@@ -63,10 +72,11 @@ def main() -> None:
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     with open(out / "gene_map.tsv", "w") as handle:
-        handle.write("GID\tChrom\tgene_name\tSet\n")
+        handle.write("GID\tChrom_H1\tChrom_H2\tgene_name\n")
         for gid in sorted(genes):
-            chromosome, name = genes[gid]
-            handle.write(f"{gid}\t{chromosome}\t{name}\tNA\n")
+            gene = genes[gid]
+            chromosomes = (gene.get(hap, (0, "NA"))[1] for hap in ("hap1", "hap2"))
+            handle.write(f"{gid}\t" + "\t".join(chromosomes) + f"\t{gene['name']}\n")
     with open(out / "tx2gene.tsv", "w") as handle:
         handle.write("transcript_id\tgene_id\tgene_name\n")
         for tx in sorted(transcripts):

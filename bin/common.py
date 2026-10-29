@@ -50,6 +50,17 @@ def parse_gff_attributes(raw: str) -> Dict[str, str]:
     return attrs
 
 
+def gene_chromosomes(row: Dict[str, str]) -> Tuple[str, str]:
+    """Chromosome of the primary copy of a gene on H1 and on H2.
+
+    A gene annotated on one haplotype only takes that chromosome for both.
+    """
+    h1, h2 = (row.get(column) or "NA" for column in ("Chrom_H1", "Chrom_H2"))
+    if h1 == h2 == "NA":
+        raise ValueError(f"gene {row.get('GID')} has no chromosome on either haplotype")
+    return (h2 if h1 == "NA" else h1), (h1 if h2 == "NA" else h2)
+
+
 def feature_parts(feature_id: str) -> Tuple[str, str | None]:
     """Return (base feature, H1/H2) from a pipeline feature ID such as GENE_1_hap2."""
     hap_match = HAP_SUFFIX_RE.search(feature_id)

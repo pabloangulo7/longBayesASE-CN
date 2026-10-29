@@ -23,6 +23,7 @@ class GeneCopy:
     start: int
     end: int
     strand: str
+    copy: int = 1
     mane: bool = False
     transcripts: set[str] = field(default_factory=set)
 
@@ -74,7 +75,7 @@ def parse_annotation(path: str, hap: str, combined_gff):
                 raw = first_attr(attrs, "gene_id", "ID")
                 if not raw:
                     continue
-                base, _copy_number = copy_identity(raw, attrs)
+                base, copy = copy_identity(raw, attrs)
                 gene = GeneCopy(
                     base_id=base,
                     feature_id=f"{raw}_{hap}",
@@ -84,6 +85,7 @@ def parse_annotation(path: str, hap: str, combined_gff):
                     start=int(fields[3]),
                     end=int(fields[4]),
                     strand=fields[6],
+                    copy=copy,
                     mane="MANE_Select" in fields[8],
                 )
                 genes.append(gene)
@@ -131,6 +133,15 @@ def parse_annotation(path: str, hap: str, combined_gff):
 
 def chromosome_label(seqid: str) -> str:
     return re.sub(r"(?:[_-])hap[12](?:$|[_-].*$)", "", seqid, flags=re.IGNORECASE)
+
+
+def primary_chromosome(copies: list[GeneCopy]) -> str:
+    """Chromosome of the copy Liftoff placed first (no _N suffix), NA without copies."""
+    return chromosome_label(min(copies, key=lambda gene: gene.copy).seqid) if copies else "NA"
+
+
+def flag(value: bool) -> str:
+    return str(value).upper()
 
 
 def main() -> None:
@@ -181,6 +192,9 @@ def main() -> None:
             inter_len = max(inter_len, max((v for _, v in copies), default=0) - min((v for _, v in copies), default=0))
             inter_exons = max(inter_exons, max((v for v, _ in copies), default=0) - min((v for v, _ in copies), default=0))
         every_tx_both = bool(all_tx) and all(tx in tx_h1 and tx in tx_h2 for tx in all_tx)
+        # Fewest haplotypes any transcript of this haplotype is annotated on (0 without transcripts).
+        min_tx = {hap: min((1 + (tx in other) for tx in txs), default=0)
+                  for hap, txs, other in (("hap1", tx_h1, tx_h2), ("hap2", tx_h2, tx_h1))}
         chroms_h1 = {chromosome_label(g.seqid) for g in h1}
         chroms_h2 = {chromosome_label(g.seqid) for g in h2}
         same_chrom = len(chroms_h1) == len(chroms_h2) == 1 and chroms_h1 == chroms_h2
@@ -214,7 +228,8 @@ def main() -> None:
             {
                 "GID": gid,
                 "gene_name": gene_name,
-                "Chrom": sorted(chroms_h1 | chroms_h2)[0] if chroms_h1 | chroms_h2 else "NA",
+                "Chrom_H1": primary_chromosome(h1),
+                "Chrom_H2": primary_chromosome(h2),
                 "copies_h1": len(h1),
                 "copies_h2": len(h2),
                 "copies_haps": int(bool(h1)) + int(bool(h2)),
@@ -224,9 +239,14 @@ def main() -> None:
                 "exons_diff_h1": within_exons["hap1"],
                 "exons_diff_h2": within_exons["hap2"],
                 "exons_diff_haps": inter_exons,
-                "chr_diff_haps": str(chr_diff_haps).upper(),
-                "min_tx_copies_haps": 2 if every_tx_both else (1 if all_tx else 0),
-                "MANE_tag": "MANE" if any(g.mane for g in h1) else "Non_MANE",
+                "chr_diff_h1": flag(len(chroms_h1) > 1),
+                "chr_diff_h2": flag(len(chroms_h2) > 1),
+                "chr_diff_haps": flag(chr_diff_haps),
+                "min_tx_copies_h1": min_tx["hap1"],
+                "min_tx_copies_h2": min_tx["hap2"],
+                "MANE_h1": flag(any(g.mane for g in h1)),
+                "MANE_h2": flag(any(g.mane for g in h2)),
+                "MANE_tag": "MANE" if any(g.mane for g in h1 + h2) else "Non_MANE",
                 "Set": set_name,
                 "Set2": set2,
             }

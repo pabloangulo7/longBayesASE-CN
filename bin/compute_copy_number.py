@@ -10,7 +10,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from common import MIN_COPY_NUMBER, feature_parts, median, parse_ploidy
+from common import MIN_COPY_NUMBER, feature_parts, gene_chromosomes, median, parse_ploidy
 
 
 DIPLOID = 2.0
@@ -53,9 +53,9 @@ def main() -> None:
     with open(args.annotation_summary) as handle:
         annotations = {}
         for row in csv.DictReader(handle, delimiter="\t"):
-            if not row.get("GID") or not row.get("Chrom"):
-                raise ValueError("annotation summary requires GID and Chrom")
-            annotations[row["GID"]] = row
+            if not row.get("GID"):
+                raise ValueError("annotation summary requires GID, Chrom_H1 and Chrom_H2")
+            annotations[row["GID"]] = dict(row, chromosomes=gene_chromosomes(row))
     if not annotations:
         raise ValueError("annotation summary contains no genes")
 
@@ -119,7 +119,10 @@ def main() -> None:
             genes.append(
                 {
                     "ID": gid,
-                    "Chrom": annotation["Chrom"],
+                    # A Singleton has its single copy on the same chromosome in
+                    # both haplotypes, so Chrom is only used for Singletons.
+                    "Chrom": annotation["chromosomes"][0],
+                    "chromosomes": annotation["chromosomes"],
                     "Set": annotation.get("Set", "NA"),
                     "H1_mean": h1,
                     "H2_mean": h2,
@@ -157,7 +160,7 @@ def main() -> None:
             global_h1_prop = 0.5
 
         chrom_stats = {}
-        for chrom in sorted({row["Chrom"] for row in genes}):
+        for chrom in sorted({chrom for row in genes for chrom in row["chromosomes"]}):
             chrom_genes = singletons.get(chrom, [])
             # A declared ploidy only keeps the chromosome out of the baseline,
             # which happens above. The depth itself is always what decides the
@@ -180,7 +183,7 @@ def main() -> None:
                 cn_h2 = max(chrom_cn * (1.0 - h1_prop), MIN_COPY_NUMBER)
             else:
                 cn_h1 = cn_h2 = 1.0
-            chrom_stats[chrom] = (chrom_cn, ratio, changed, h1_prop, cn_h1, cn_h2)
+            chrom_stats[chrom] = {"H1_prop": h1_prop, "CN_H1": cn_h1, "CN_H2": cn_h2}
             qc_rows.append(
                 {
                     "sample": dna,
@@ -205,14 +208,19 @@ def main() -> None:
             )
 
         for row in genes:
-            chrom_cn, ratio, changed, h1_prop, cn_h1, cn_h2 = chrom_stats[row["Chrom"]]
+            chrom_h1, chrom_h2 = row["chromosomes"]
+            # Each allele takes the copy number of the homologue it lies on: H1
+            # that of the H1 copy of its chromosome, H2 that of the H2 copy.
+            cn_h1 = chrom_stats[chrom_h1]["CN_H1"]
+            cn_h2 = chrom_stats[chrom_h2]["CN_H2"]
             if args.cn_resolution == "gene" and row["Total_mean"] >= args.min_gene_depth:
                 # A gene with no coverage at all cannot tell a deletion from a
                 # region its reads never reach, so it keeps its chromosome's
                 # value instead of being called homozygously deleted.
                 gene_prop = row["gene_H1_prop"]
                 if not math.isfinite(gene_prop):
-                    gene_prop = h1_prop
+                    gene_prop = (chrom_stats[chrom_h1]["H1_prop"] if chrom_h1 == chrom_h2
+                                 else cn_h1 / (cn_h1 + cn_h2))
                 cn_total = DIPLOID * row["Total_mean"] / baseline
                 cn_h1 = max(cn_total * gene_prop, MIN_COPY_NUMBER)
                 cn_h2 = max(cn_total * (1.0 - gene_prop), MIN_COPY_NUMBER)
@@ -220,7 +228,8 @@ def main() -> None:
                 {
                     "sample": dna,
                     "ID": row["ID"],
-                    "Chrom": row["Chrom"],
+                    "Chrom_H1": chrom_h1,
+                    "Chrom_H2": chrom_h2,
                     "CN_H1": cn_h1,
                     "CN_H2": cn_h2,
                 }

@@ -82,7 +82,8 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 | `reference/diploid.gff3` | Annotation of both haplotypes. |
 | `reference/diploid_transcriptome.fa`, `hap1_transcriptome.fa`, `hap2_transcriptome.fa` | Transcript sequences. |
 | `reference/genes.bed`, `genes.saf`, `tx2gene.tsv` | Gene coordinates and transcript-to-gene map. |
-| `reference/annotation_summary.tsv`, `transcriptome_summary.tsv` | Copies of every gene per haplotype, and transcripts per gene. |
+| `reference/annotation_summary.tsv` | Per gene and haplotype: chromosome of the primary copy (`Chrom_H1`, `Chrom_H2`), copies, whether they fall on several chromosomes (`chr_diff_h1`, `chr_diff_h2`), length and exon differences, transcripts shared with the other haplotype (`min_tx_copies_h1`, `min_tx_copies_h2`), MANE (`MANE_h1`, `MANE_h2`, `MANE_tag`), and the classes `Set` and `Set2`. |
+| `reference/transcriptome_summary.tsv` | Transcripts per gene. |
 | `reference/liftoff/` | Liftoff output, when the annotation was lifted over. |
 
 ### DNA
@@ -94,7 +95,7 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 
 | Output | Content |
 |---|---|
-| `dna/gene_copy_numbers.tsv` | Copy number of each haplotype per sample and gene (`sample`, `ID`, `chromosome`, `CN_H1`, `CN_H2`). |
+| `dna/gene_copy_numbers.tsv` | Copy number of each haplotype per sample and gene (`sample`, `ID`, `Chrom_H1`, `Chrom_H2`, `CN_H1`, `CN_H2`). |
 | `dna/copy_number.qc.tsv` | Diploid baseline and per-chromosome estimates. |
 | `dna/counts/` | Reads per gene and read category, per sample. |
 | `dna/coverage/` | Haplotype-specific and NonHS depth per gene, per sample. |
@@ -199,7 +200,9 @@ A read is H1 or H2 when all its best-scoring alignments fall on one haplotype, a
 
 ### Copy number
 
-DNA reads are classified in the same way. Only genes with a single annotated copy per haplotype set the diploid baseline and the chromosome medians. The H1/H2 split of a gene comes from its haplotype-specific depth. At transcript level, every transcript takes the copy number of its gene.
+DNA reads are classified in the same way. Only genes with a single annotated copy per haplotype (Singletons) set the diploid baseline and the chromosome medians. For each chromosome, the total copy number is the median depth of its Singletons over the baseline, and it is split into `CN_H1` and `CN_H2` with the median H1 share of their haplotype-specific depth; a chromosome within `--cn_change_threshold` of diploid is kept at 1:1.
+
+Each allele of a gene takes the copy number of the homologue it lies on: `CN_H1` that of the H1 copy of `Chrom_H1`, and `CN_H2` that of the H2 copy of `Chrom_H2`, the chromosomes of the primary copy Liftoff placed on each haplotype. They differ for genes whose primary copies lie on different chromosomes, mostly in segmental duplications; a gene annotated on one haplotype only takes that chromosome for both. At transcript level, every transcript takes the copy number of its gene.
 
 ### Mapping priors
 

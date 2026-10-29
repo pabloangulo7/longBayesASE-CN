@@ -311,6 +311,34 @@ def test_merged_hs_counts(tmp_path: Path) -> None:
     assert read_tsv(output) == [{"sample": "S1", "ID": "G1", "H1": "12", "H2": "9", "NonHS": "7"}]
 
 
+def test_annotation_summary_describes_each_haplotype(tmp_path: Path) -> None:
+    """Chromosome of the primary copy, copies on several chromosomes, transcripts and MANE per haplotype."""
+    def gff(rows: list[tuple[str, str, str, str]]) -> str:
+        lines = ["##gff-version 3"]
+        for seqid, gene, extra, tags in rows:
+            copy = f";extra_copy_number={extra}" if extra else ""
+            tx = gene.replace("G", "T")
+            lines += [f"{seqid}\tLiftoff\tgene\t1\t100\t.\t+\t.\tID={gene};gene_id={gene}{copy}",
+                      f"{seqid}\tLiftoff\ttranscript\t1\t100\t.\t+\t.\tID={tx};Parent={gene};transcript_id={tx}{copy}{tags}",
+                      f"{seqid}\tLiftoff\texon\t1\t100\t.\t+\t.\tParent={tx};transcript_id={tx}{copy}"]
+        return "\n".join(lines) + "\n"
+
+    hap1, hap2 = tmp_path / "hap1.gff3", tmp_path / "hap2.gff3"
+    # G1: a second copy on another chromosome of H1 only. G2: H1 and H2 on
+    # different chromosomes. G3: only on H2, with its MANE transcript there.
+    hap1.write_text(gff([("chr1_hap1", "G1", "", ""), ("chr7_hap1", "G1_1", "1", ""),
+                         ("chrX_hap1", "G2", "", "")]))
+    hap2.write_text(gff([("chr1_hap2", "G1", "", ""), ("chr10_hap2", "G2", "", ""),
+                         ("chr3_hap2", "G3", "", ";tag=MANE_Select")]))
+    run_script("annotation_bundle.py", "--hap1-gff", hap1, "--hap2-gff", hap2, "--output-dir", tmp_path / "out")
+    rows = {row["GID"]: row for row in read_tsv(tmp_path / "out" / "annotation_summary.tsv")}
+    columns = ("Chrom_H1", "Chrom_H2", "chr_diff_h1", "chr_diff_h2", "min_tx_copies_h1", "min_tx_copies_h2",
+               "MANE_h1", "MANE_h2", "MANE_tag")
+    assert [rows["G1"][c] for c in columns] == ["chr1", "chr1", "TRUE", "FALSE", "2", "2", "FALSE", "FALSE", "Non_MANE"]
+    assert [rows["G2"][c] for c in columns] == ["chrX", "chr10", "FALSE", "FALSE", "2", "2", "FALSE", "FALSE", "Non_MANE"]
+    assert [rows["G3"][c] for c in columns] == ["NA", "chr3", "FALSE", "FALSE", "0", "1", "FALSE", "TRUE", "MANE"]
+
+
 def test_copy_number_from_samplesheet_ploidy(tmp_path: Path) -> None:
     samplesheet = tmp_path / "samples.tsv"
     samplesheet.write_text(
@@ -318,7 +346,8 @@ def test_copy_number_from_samplesheet_ploidy(tmp_path: Path) -> None:
         "S1\tA\tD1\t\t\tchr7:2:1;chr9:1:0\n"
     )
     annotation = tmp_path / "annotation.tsv"
-    annotation.write_text("GID\tChrom\nG1\tchr1\nG7\tchr7\nG9\tchr9\n")
+    annotation.write_text("GID\tChrom_H1\tChrom_H2\nG1\tchr1\tchr1\nG7\tchr7\tchr7\nG9\tchr9\tchr9\n"
+                          "GMIX\tchr7\tchr9\nGONE\tNA\tchr7\n")
     output = tmp_path / "copy.tsv"
     run_script(
         "copy_number_from_ploidy.py", "--samplesheet", samplesheet,
@@ -329,6 +358,10 @@ def test_copy_number_from_samplesheet_ploidy(tmp_path: Path) -> None:
     assert (rows["G7"]["CN_H1"], rows["G7"]["CN_H2"]) == ("2.0", "1.0")
     # A declared loss is floored like a measured one: a copy number of 0 breaks the model.
     assert (rows["G9"]["CN_H1"], rows["G9"]["CN_H2"]) == ("1.0", "0.05")
+    # Each allele takes the ploidy of its own homologue; a gene annotated on one
+    # haplotype only takes that chromosome for both.
+    assert (rows["GMIX"]["CN_H1"], rows["GMIX"]["CN_H2"]) == ("2.0", "0.05")
+    assert (rows["GONE"]["Chrom_H1"], rows["GONE"]["CN_H1"], rows["GONE"]["CN_H2"]) == ("chr7", "2.0", "1.0")
 
 
 def test_simulated_reads_are_cut_at_the_read_intervals(tmp_path: Path) -> None:
@@ -354,12 +387,13 @@ def test_simulated_reads_are_cut_at_the_read_intervals(tmp_path: Path) -> None:
 def test_chromosome_copy_number_and_haplotype_proportions(tmp_path: Path) -> None:
     annotation = tmp_path / "annotation.tsv"
     annotation.write_text(
-        "GID\tChrom\tSet\n"
-        "G0\tchr1\tSingleton\n"
-        "G1\tchr1\tSingleton\n"
-        "G7A\tchr7\tSingleton\n"
-        "G7B\tchr7\tSingleton\n"
-        "GCOPY\tchr7\tMulticopy\n"
+        "GID\tChrom_H1\tChrom_H2\tSet\n"
+        "G0\tchr1\tchr1\tSingleton\n"
+        "G1\tchr1\tchr1\tSingleton\n"
+        "G7A\tchr7\tchr7\tSingleton\n"
+        "G7B\tchr7\tchr7\tSingleton\n"
+        "GCOPY\tchr7\tchr7\tMulticopy\n"
+        "GMIX\tchr7\tchr1\tComplex\n"
     )
     samplesheet = tmp_path / "samplesheet.tsv"
     samplesheet.write_text(
@@ -401,6 +435,9 @@ def test_chromosome_copy_number_and_haplotype_proportions(tmp_path: Path) -> Non
     assert float(rows["G7A"]["CN_H2"]) == 1.0
     assert rows["GCOPY"]["CN_H1"] == rows["G7A"]["CN_H1"]
     assert rows["GCOPY"]["CN_H2"] == rows["G7A"]["CN_H2"]
+    # H1 on the gained chr7, H2 on the diploid chr1: each allele its own homologue.
+    assert (float(rows["GMIX"]["CN_H1"]), float(rows["GMIX"]["CN_H2"])) == (2.0, 1.0)
+    assert (rows["GMIX"]["Chrom_H1"], rows["GMIX"]["Chrom_H2"]) == ("chr7", "chr1")
     qc_rows = {row["Chrom"]: row for row in read_tsv(qc)}
     assert float(qc_rows["chr1"]["Chrom_CN"]) == 2.0
     assert float(qc_rows["chr7"]["Chrom_CN"]) == 3.0
@@ -520,12 +557,12 @@ def test_split_ase_input_rejects_pooled_sides(tmp_path: Path) -> None:
 
 
 def _copy_number_inputs(tmp_path: Path, chromosomes: dict, ploidy: str = "") -> dict:
-    annotation = ["GID\tChrom\tSet"]
+    annotation = ["GID\tChrom_H1\tChrom_H2\tSet"]
     hs, nonhs = [], []
     for chromosome, (h1, h2, shared) in chromosomes.items():
         for index in range(60):
             gene = f"{chromosome}_G{index:03d}"
-            annotation.append(f"{gene}\t{chromosome}\tSingleton")
+            annotation.append(f"{gene}\t{chromosome}\t{chromosome}\tSingleton")
             hs += [f"{gene}_hap1\t{h1}", f"{gene}_hap2\t{h2}"]
             nonhs += [f"{gene}_hap1\t{shared}", f"{gene}_hap2\t{shared}"]
     (tmp_path / "ann.tsv").write_text("\n".join(annotation) + "\n")
@@ -569,21 +606,21 @@ def test_copy_number_calls_gains_and_losses(tmp_path: Path) -> None:
 
 def test_copy_number_gene_level_fallbacks(tmp_path: Path) -> None:
     """A gene without enough depth of its own leans on its chromosome."""
-    annotation = ["GID\tChrom\tSet"]
+    annotation = ["GID\tChrom_H1\tChrom_H2\tSet"]
     hs, nonhs = [], []
     for index in range(100):                  # chr1 is diploid and sets the baseline
         gene = f"chr1_G{index:03d}"
-        annotation.append(f"{gene}\tchr1\tSingleton")
+        annotation.append(f"{gene}\tchr1\tchr1\tSingleton")
         hs += [f"{gene}_hap1\t20", f"{gene}_hap2\t20"]
         nonhs += [f"{gene}_hap1\t0", f"{gene}_hap2\t0"]
     for index in range(40):                   # chr2 carries three copies, split 0.75
         gene = f"chr2_G{index:03d}"
-        annotation.append(f"{gene}\tchr2\tSingleton")
+        annotation.append(f"{gene}\tchr2\tchr2\tSingleton")
         hs += [f"{gene}_hap1\t45", f"{gene}_hap2\t15"]
         nonhs += [f"{gene}_hap1\t0", f"{gene}_hap2\t0"]
     # Two genes on that gained chromosome: one with no coverage at all, and one
     # with ample total depth but too few haplotype-specific reads to split it.
-    annotation += ["NO_READS\tchr2\tComplex", "NO_SPLIT\tchr2\tComplex"]
+    annotation += ["NO_READS\tchr2\tchr2\tComplex", "NO_SPLIT\tchr2\tchr2\tComplex"]
     hs += ["NO_READS_hap1\t0", "NO_READS_hap2\t0", "NO_SPLIT_hap1\t1", "NO_SPLIT_hap2\t1"]
     nonhs += ["NO_READS_hap1\t0", "NO_READS_hap2\t0", "NO_SPLIT_hap1\t58", "NO_SPLIT_hap2\t58"]
     (tmp_path / "ann.tsv").write_text("\n".join(annotation) + "\n")
@@ -622,14 +659,14 @@ def test_copy_number_gene_level_fallbacks(tmp_path: Path) -> None:
 
 
 def test_copy_number_gene_copies_option(tmp_path: Path) -> None:
-    annotation = ["GID\tChrom\tSet"]
+    annotation = ["GID\tChrom_H1\tChrom_H2\tSet"]
     hs, hs_copy = [], []
     for index in range(60):
         gene = f"chr1_G{index:03d}"
-        annotation.append(f"{gene}\tchr1\tSingleton")
+        annotation.append(f"{gene}\tchr1\tchr1\tSingleton")
         hs += [f"{gene}_hap1\t20", f"{gene}_hap2\t20"]
         hs_copy += [f"{gene}_hap1\t0", f"{gene}_hap2\t0"]
-    annotation.append("DUP\tchr1\tComplex")
+    annotation.append("DUP\tchr1\tchr1\tComplex")
     hs += ["DUP_hap1\t20", "DUP_hap2\t20"]
     hs_copy += ["DUP_1_hap1\t20", "DUP_1_hap2\t20"]        # a second copy elsewhere
     (tmp_path / "ann.tsv").write_text("\n".join(annotation) + "\n")
