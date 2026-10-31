@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -144,12 +144,26 @@ def flag(value: bool) -> str:
     return str(value).upper()
 
 
+def largest_spread(groups, index: int, relative: bool = False) -> float:
+    """Largest difference between the copies of a transcript in exon number (index 0) or
+    spliced length (index 1), in percent of the longest copy when relative."""
+    spreads = []
+    for copies in groups:
+        values = [copy[index] for copy in copies]
+        if values and max(values) > 0:
+            spread = max(values) - min(values)
+            spreads.append(100 * spread / max(values) if relative else spread)
+    return max(spreads, default=0)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--hap1-gff", required=True)
     parser.add_argument("--hap2-gff", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--singleton-length-tolerance", type=int, default=25)
+    parser.add_argument("--max-length-difference", type=float, default=0.05,
+                        help="largest length difference between the copies of a transcript, as a fraction "
+                             "of its length, for a single-copy gene to be a Singleton")
     args = parser.parse_args()
 
     out = Path(args.output_dir)
@@ -180,49 +194,29 @@ def main() -> None:
         tx_h1 = tx_by_gene_hap.get((gid, "hap1"), {})
         tx_h2 = tx_by_gene_hap.get((gid, "hap2"), {})
         all_tx = set(tx_h1) | set(tx_h2)
-        within_len = {}
-        within_exons = {}
-        for hap, txs in (("hap1", tx_h1), ("hap2", tx_h2)):
-            within_len[hap] = max((max(v for _, v in copies) - min(v for _, v in copies) for copies in txs.values()), default=0)
-            within_exons[hap] = max((max(v for v, _ in copies) - min(v for v, _ in copies) for copies in txs.values()), default=0)
-        inter_len = 0
-        inter_exons = 0
-        for tx in all_tx:
-            copies = tx_h1.get(tx, []) + tx_h2.get(tx, [])
-            inter_len = max(inter_len, max((v for _, v in copies), default=0) - min((v for _, v in copies), default=0))
-            inter_exons = max(inter_exons, max((v for v, _ in copies), default=0) - min((v for v, _ in copies), default=0))
+        both = [tx_h1.get(tx, []) + tx_h2.get(tx, []) for tx in all_tx]
+        exons_diff = largest_spread(both, 0)
+        length_diff_pct = largest_spread(both, 1, relative=True)
         every_tx_both = bool(all_tx) and all(tx in tx_h1 and tx in tx_h2 for tx in all_tx)
         # Fewest haplotypes any transcript of this haplotype is annotated on (0 without transcripts).
         min_tx = {hap: min((1 + (tx in other) for tx in txs), default=0)
                   for hap, txs, other in (("hap1", tx_h1, tx_h2), ("hap2", tx_h2, tx_h1))}
-        chroms_h1 = {chromosome_label(g.seqid) for g in h1}
-        chroms_h2 = {chromosome_label(g.seqid) for g in h2}
-        same_chrom = len(chroms_h1) == len(chroms_h2) == 1 and chroms_h1 == chroms_h2
-        chr_diff_haps = bool(h1 and h2 and chroms_h1 != chroms_h2)
-        singleton = (
-            len(h1) == 1
-            and len(h2) == 1
-            and same_chrom
-            and every_tx_both
-            and inter_exons == 0
-            and inter_len < args.singleton_length_tolerance
-        )
-        if singleton:
-            set_name = "Singleton"
-        elif h1 and h2:
-            set_name = "Complex"
+        # Copies of the gene on each chromosome of each haplotype.
+        layout_h1 = Counter(chromosome_label(g.seqid) for g in h1)
+        layout_h2 = Counter(chromosome_label(g.seqid) for g in h2)
+        single_copy = len(h1) == len(h2) == 1
+        structural = not every_tx_both or exons_diff > 0 or length_diff_pct > 100 * args.max_length_difference
+        if not (h1 and h2):
+            gene_class = "One_haplotype"
+        elif single_copy and layout_h1 != layout_h2:
+            gene_class = "Single_copy_different_chromosomes"
+        elif single_copy:
+            gene_class = "Structural_difference" if structural else "Singleton"
+        elif layout_h1 == layout_h2:
+            gene_class = "Paired_copies"
         else:
-            set_name = "OneHap_copy"
-        multicopy_both = len(h1) > 1 and len(h2) > 1
-        multicopy_one = (len(h1) > 1) ^ (len(h2) > 1)
-        multi_chrom = len(chroms_h1 | chroms_h2) > 1
-        if multicopy_both:
-            set2 = "MulticopyBoth"
-        elif multicopy_one:
-            set2 = "MulticopyOneHap"
-        else:
-            set2 = "Singlecopy"
-        set2 += "_MultiChromosome" if multi_chrom else "_SameChromosome"
+            several = len(layout_h1 | layout_h2) > 1
+            gene_class = "Unpaired_copies_several_chromosomes" if several else "Unpaired_copies_same_chromosome"
         gene_name = (h1 or h2)[0].gene_name
         summary_rows.append(
             {
@@ -232,23 +226,21 @@ def main() -> None:
                 "Chrom_H2": primary_chromosome(h2),
                 "copies_h1": len(h1),
                 "copies_h2": len(h2),
-                "copies_haps": int(bool(h1)) + int(bool(h2)),
-                "length_diff_h1": within_len["hap1"],
-                "length_diff_h2": within_len["hap2"],
-                "length_diff_haps": inter_len,
-                "exons_diff_h1": within_exons["hap1"],
-                "exons_diff_h2": within_exons["hap2"],
-                "exons_diff_haps": inter_exons,
-                "chr_diff_h1": flag(len(chroms_h1) > 1),
-                "chr_diff_h2": flag(len(chroms_h2) > 1),
-                "chr_diff_haps": flag(chr_diff_haps),
+                "chromosomes_h1": ",".join(sorted(layout_h1)) or "NA",
+                "chromosomes_h2": ",".join(sorted(layout_h2)) or "NA",
+                "length_diff_h1": largest_spread(tx_h1.values(), 1),
+                "length_diff_h2": largest_spread(tx_h2.values(), 1),
+                "length_diff_haps": largest_spread(both, 1),
+                "length_diff_pct_haps": round(length_diff_pct, 2),
+                "exons_diff_h1": largest_spread(tx_h1.values(), 0),
+                "exons_diff_h2": largest_spread(tx_h2.values(), 0),
+                "exons_diff_haps": exons_diff,
                 "min_tx_copies_h1": min_tx["hap1"],
                 "min_tx_copies_h2": min_tx["hap2"],
                 "MANE_h1": flag(any(g.mane for g in h1)),
                 "MANE_h2": flag(any(g.mane for g in h2)),
                 "MANE_tag": "MANE" if any(g.mane for g in h1 + h2) else "Non_MANE",
-                "Set": set_name,
-                "Set2": set2,
+                "Class": gene_class,
             }
         )
 

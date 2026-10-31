@@ -312,31 +312,40 @@ def test_merged_hs_counts(tmp_path: Path) -> None:
 
 
 def test_annotation_summary_describes_each_haplotype(tmp_path: Path) -> None:
-    """Chromosome of the primary copy, copies on several chromosomes, transcripts and MANE per haplotype."""
-    def gff(rows: list[tuple[str, str, str, str]]) -> str:
+    """Chromosome of the primary copy, copies on several chromosomes, transcripts, MANE and class of each gene."""
+    def gff(rows: list[tuple]) -> str:
         lines = ["##gff-version 3"]
-        for seqid, gene, extra, tags in rows:
+        for seqid, gene, extra, tags, *end in rows:
+            end = end[0] if end else 100
             copy = f";extra_copy_number={extra}" if extra else ""
             tx = gene.replace("G", "T")
-            lines += [f"{seqid}\tLiftoff\tgene\t1\t100\t.\t+\t.\tID={gene};gene_id={gene}{copy}",
-                      f"{seqid}\tLiftoff\ttranscript\t1\t100\t.\t+\t.\tID={tx};Parent={gene};transcript_id={tx}{copy}{tags}",
-                      f"{seqid}\tLiftoff\texon\t1\t100\t.\t+\t.\tParent={tx};transcript_id={tx}{copy}"]
+            lines += [f"{seqid}\tLiftoff\tgene\t1\t{end}\t.\t+\t.\tID={gene};gene_id={gene}{copy}",
+                      f"{seqid}\tLiftoff\ttranscript\t1\t{end}\t.\t+\t.\tID={tx};Parent={gene};transcript_id={tx}{copy}{tags}",
+                      f"{seqid}\tLiftoff\texon\t1\t{end}\t.\t+\t.\tParent={tx};transcript_id={tx}{copy}"]
         return "\n".join(lines) + "\n"
 
     hap1, hap2 = tmp_path / "hap1.gff3", tmp_path / "hap2.gff3"
     # G1: a second copy on another chromosome of H1 only. G2: H1 and H2 on
     # different chromosomes. G3: only on H2, with its MANE transcript there.
-    hap1.write_text(gff([("chr1_hap1", "G1", "", ""), ("chr7_hap1", "G1_1", "1", ""),
-                         ("chrX_hap1", "G2", "", "")]))
-    hap2.write_text(gff([("chr1_hap2", "G1", "", ""), ("chr10_hap2", "G2", "", ""),
-                         ("chr3_hap2", "G3", "", ";tag=MANE_Select")]))
+    # G4: one copy per haplotype. G5: two copies on chr4 in both haplotypes.
+    # G6: two copies on chr5 in H1, one in H2. G7 and G8: one copy per
+    # haplotype whose transcript is about 4% and 10% longer on H2.
+    hap1.write_text(gff([("chr1_hap1", "G1", "", ""), ("chr7_hap1", "G1_1", "1", ""), ("chrX_hap1", "G2", "", ""),
+                         ("chr2_hap1", "G4", "", ""), ("chr4_hap1", "G5", "", ""), ("chr4_hap1", "G5_1", "1", ""),
+                         ("chr5_hap1", "G6", "", ""), ("chr5_hap1", "G6_1", "1", ""),
+                         ("chr6_hap1", "G7", "", "", 96), ("chr6_hap1", "G8", "", "", 90)]))
+    hap2.write_text(gff([("chr1_hap2", "G1", "", ""), ("chr10_hap2", "G2", "", ""), ("chr3_hap2", "G3", "", ";tag=MANE_Select"),
+                         ("chr2_hap2", "G4", "", ""), ("chr4_hap2", "G5", "", ""), ("chr4_hap2", "G5_1", "1", ""),
+                         ("chr5_hap2", "G6", "", ""), ("chr6_hap2", "G7", "", ""), ("chr6_hap2", "G8", "", "")]))
     run_script("annotation_bundle.py", "--hap1-gff", hap1, "--hap2-gff", hap2, "--output-dir", tmp_path / "out")
     rows = {row["GID"]: row for row in read_tsv(tmp_path / "out" / "annotation_summary.tsv")}
-    columns = ("Chrom_H1", "Chrom_H2", "chr_diff_h1", "chr_diff_h2", "min_tx_copies_h1", "min_tx_copies_h2",
-               "MANE_h1", "MANE_h2", "MANE_tag")
-    assert [rows["G1"][c] for c in columns] == ["chr1", "chr1", "TRUE", "FALSE", "2", "2", "FALSE", "FALSE", "Non_MANE"]
-    assert [rows["G2"][c] for c in columns] == ["chrX", "chr10", "FALSE", "FALSE", "2", "2", "FALSE", "FALSE", "Non_MANE"]
-    assert [rows["G3"][c] for c in columns] == ["NA", "chr3", "FALSE", "FALSE", "0", "1", "FALSE", "TRUE", "MANE"]
+    columns = ("Chrom_H1", "Chrom_H2", "chromosomes_h1", "chromosomes_h2", "min_tx_copies_h1", "min_tx_copies_h2",
+               "MANE_h1", "MANE_h2", "MANE_tag", "Class")
+    assert [rows["G1"][c] for c in columns] == ["chr1", "chr1", "chr1,chr7", "chr1", "2", "2", "FALSE", "FALSE", "Non_MANE", "Unpaired_copies_several_chromosomes"]
+    assert [rows["G2"][c] for c in columns] == ["chrX", "chr10", "chrX", "chr10", "2", "2", "FALSE", "FALSE", "Non_MANE", "Single_copy_different_chromosomes"]
+    assert [rows["G3"][c] for c in columns] == ["NA", "chr3", "NA", "chr3", "0", "1", "FALSE", "TRUE", "MANE", "One_haplotype"]
+    assert [rows[g]["Class"] for g in ("G4", "G5", "G6", "G7", "G8")] == ["Singleton", "Paired_copies", "Unpaired_copies_same_chromosome", "Singleton", "Structural_difference"]
+    assert [rows[g]["length_diff_pct_haps"] for g in ("G7", "G8")] == ["4.04", "10.1"]
 
 
 def test_copy_number_from_samplesheet_ploidy(tmp_path: Path) -> None:
@@ -387,13 +396,13 @@ def test_simulated_reads_are_cut_at_the_read_intervals(tmp_path: Path) -> None:
 def test_chromosome_copy_number_and_haplotype_proportions(tmp_path: Path) -> None:
     annotation = tmp_path / "annotation.tsv"
     annotation.write_text(
-        "GID\tChrom_H1\tChrom_H2\tSet\n"
+        "GID\tChrom_H1\tChrom_H2\tClass\n"
         "G0\tchr1\tchr1\tSingleton\n"
         "G1\tchr1\tchr1\tSingleton\n"
         "G7A\tchr7\tchr7\tSingleton\n"
         "G7B\tchr7\tchr7\tSingleton\n"
-        "GCOPY\tchr7\tchr7\tMulticopy\n"
-        "GMIX\tchr7\tchr1\tComplex\n"
+        "GCOPY\tchr7\tchr7\tPaired_copies\n"
+        "GMIX\tchr7\tchr1\tSingle_copy_different_chromosomes\n"
     )
     samplesheet = tmp_path / "samplesheet.tsv"
     samplesheet.write_text(
@@ -557,7 +566,7 @@ def test_split_ase_input_rejects_pooled_sides(tmp_path: Path) -> None:
 
 
 def _copy_number_inputs(tmp_path: Path, chromosomes: dict, ploidy: str = "") -> dict:
-    annotation = ["GID\tChrom_H1\tChrom_H2\tSet"]
+    annotation = ["GID\tChrom_H1\tChrom_H2\tClass"]
     hs, nonhs = [], []
     for chromosome, (h1, h2, shared) in chromosomes.items():
         for index in range(60):
@@ -606,7 +615,7 @@ def test_copy_number_calls_gains_and_losses(tmp_path: Path) -> None:
 
 def test_copy_number_gene_level_fallbacks(tmp_path: Path) -> None:
     """A gene without enough depth of its own leans on its chromosome."""
-    annotation = ["GID\tChrom_H1\tChrom_H2\tSet"]
+    annotation = ["GID\tChrom_H1\tChrom_H2\tClass"]
     hs, nonhs = [], []
     for index in range(100):                  # chr1 is diploid and sets the baseline
         gene = f"chr1_G{index:03d}"
@@ -620,7 +629,7 @@ def test_copy_number_gene_level_fallbacks(tmp_path: Path) -> None:
         nonhs += [f"{gene}_hap1\t0", f"{gene}_hap2\t0"]
     # Two genes on that gained chromosome: one with no coverage at all, and one
     # with ample total depth but too few haplotype-specific reads to split it.
-    annotation += ["NO_READS\tchr2\tchr2\tComplex", "NO_SPLIT\tchr2\tchr2\tComplex"]
+    annotation += ["NO_READS\tchr2\tchr2\tStructural_difference", "NO_SPLIT\tchr2\tchr2\tStructural_difference"]
     hs += ["NO_READS_hap1\t0", "NO_READS_hap2\t0", "NO_SPLIT_hap1\t1", "NO_SPLIT_hap2\t1"]
     nonhs += ["NO_READS_hap1\t0", "NO_READS_hap2\t0", "NO_SPLIT_hap1\t58", "NO_SPLIT_hap2\t58"]
     (tmp_path / "ann.tsv").write_text("\n".join(annotation) + "\n")
@@ -659,14 +668,14 @@ def test_copy_number_gene_level_fallbacks(tmp_path: Path) -> None:
 
 
 def test_copy_number_gene_copies_option(tmp_path: Path) -> None:
-    annotation = ["GID\tChrom_H1\tChrom_H2\tSet"]
+    annotation = ["GID\tChrom_H1\tChrom_H2\tClass"]
     hs, hs_copy = [], []
     for index in range(60):
         gene = f"chr1_G{index:03d}"
         annotation.append(f"{gene}\tchr1\tchr1\tSingleton")
         hs += [f"{gene}_hap1\t20", f"{gene}_hap2\t20"]
         hs_copy += [f"{gene}_hap1\t0", f"{gene}_hap2\t0"]
-    annotation.append("DUP\tchr1\tchr1\tComplex")
+    annotation.append("DUP\tchr1\tchr1\tPaired_copies")
     hs += ["DUP_hap1\t20", "DUP_hap2\t20"]
     hs_copy += ["DUP_1_hap1\t20", "DUP_1_hap2\t20"]        # a second copy elsewhere
     (tmp_path / "ann.tsv").write_text("\n".join(annotation) + "\n")

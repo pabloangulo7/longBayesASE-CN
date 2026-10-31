@@ -123,7 +123,7 @@ process BUILD_ANNOTATION_BUNDLE {
     stub:
     """
     mkdir -p bundle
-    printf 'GID\tgene_name\tChrom_H1\tChrom_H2\tcopies_h1\tcopies_h2\tSet\nGENE1\tGENE1\tchr1\tchr1\t1\t1\tSingleton\n' > bundle/annotation_summary.tsv
+    printf 'GID\tgene_name\tChrom_H1\tChrom_H2\tcopies_h1\tcopies_h2\tClass\nGENE1\tGENE1\tchr1\tchr1\t1\t1\tSingleton\n' > bundle/annotation_summary.tsv
     printf 'chr1_hap1\t0\t12\tGENE1_hap1\nchr1_hap2\t0\t12\tGENE1_hap2\n' > bundle/genes.bed
     printf 'GeneID\tChr\tStart\tEnd\tStrand\nGENE1_hap1\tchr1_hap1\t1\t12\t+\nGENE1_hap2\tchr1_hap2\t1\t12\t+\n' > bundle/genes.saf
     printf 'transcript_id\tgene_id\tgene_name\nTX1\tGENE1\tGENE1\n' > bundle/tx2gene.tsv

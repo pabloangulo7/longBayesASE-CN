@@ -123,7 +123,7 @@ def main() -> None:
                     # both haplotypes, so Chrom is only used for Singletons.
                     "Chrom": annotation["chromosomes"][0],
                     "chromosomes": annotation["chromosomes"],
-                    "Set": annotation.get("Set", "NA"),
+                    "Class": annotation.get("Class", "NA"),
                     "H1_mean": h1,
                     "H2_mean": h2,
                     "NonHS_mean": nonhs,
@@ -141,7 +141,7 @@ def main() -> None:
         baseline_values = [
             row["Total_mean"]
             for row in genes
-            if row["Set"] == "Singleton"
+            if row["Class"] == "Singleton"
             and (
                 row["Chrom"] not in expected_ploidy[dna]
                 or sum(expected_ploidy[dna][row["Chrom"]]) == DIPLOID
@@ -153,9 +153,9 @@ def main() -> None:
 
         singletons: dict[str, list[dict]] = defaultdict(list)
         for row in genes:
-            if row["Set"] == "Singleton":
+            if row["Class"] == "Singleton":
                 singletons[row["Chrom"]].append(row)
-        global_h1_prop = finite_median(row["gene_H1_prop"] for row in genes if row["Set"] == "Singleton")
+        global_h1_prop = finite_median(row["gene_H1_prop"] for row in genes if row["Class"] == "Singleton")
         if not math.isfinite(global_h1_prop):
             global_h1_prop = 0.5
 
