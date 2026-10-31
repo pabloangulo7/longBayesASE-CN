@@ -8,14 +8,14 @@
 
 The pipeline needs:
 
-- a haplotype-resolved FASTA whose contigs end in `_hap1` or `_hap2`;
-- a GFF3 annotation of that assembly, or a source genome and annotation to lift over;
-- a samplesheet;
-- one or more contrasts, for example `Aneuploid:Control`.
+- a haplotype-resolved assembly (FASTA) whose contigs end in `_hap1` or `_hap2`;
+- its annotation (GFF3), or a reference genome and annotation to lift over with Liftoff;
+- a samplesheet with the sample, condition and DNA sample of each RNA library and the paths to its cDNA and gDNA reads (see [Samplesheet](#samplesheet));
+- the conditions to compare, for example `Aneuploid:Control`.
 
 ## Workflow
 
-![longBayesASE-CN workflow](docs/images/workflow.svg)
+![longBayesASE-CN workflow](docs/workflow.svg)
 
 ## Quick start
 
@@ -66,7 +66,7 @@ Sample2_R1	Aneuploid	Sample2	/data/Sample2_R1.fastq.gz	/data/Sample2.fastq.gz	ch
 | `dna` | gDNA FASTQ, uBAM, or BAM aligned to the assembly. May be empty. |
 | `ploidy` | Known copy number, `chromosome:CN_H1:CN_H2` separated by semicolons. Empty for a diploid sample. |
 
-FASTQ and uBAM files are aligned with minimap2; a BAM is used as it is. Several raw files of one library can be separated by semicolons. `assets/samplesheet.example.tsv` is a template.
+FASTQ and uBAM files are aligned with minimap2; a BAM is used as it is. Several raw files of one library can be separated by semicolons. `examples/samplesheet.tsv` is a template.
 
 ## Steps
 
@@ -82,9 +82,23 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 | `reference/diploid.gff3` | Annotation of both haplotypes. |
 | `reference/diploid_transcriptome.fa`, `hap1_transcriptome.fa`, `hap2_transcriptome.fa` | Transcript sequences. |
 | `reference/genes.bed`, `genes.saf`, `tx2gene.tsv` | Gene coordinates and transcript-to-gene map. |
-| `reference/annotation_summary.tsv` | Per gene and haplotype: chromosome of the primary copy (`Chrom_H1`, `Chrom_H2`), copies, whether they fall on several chromosomes (`chr_diff_h1`, `chr_diff_h2`), length and exon differences, transcripts shared with the other haplotype (`min_tx_copies_h1`, `min_tx_copies_h2`), MANE (`MANE_h1`, `MANE_h2`, `MANE_tag`), and the classes `Set` and `Set2`. |
+| `reference/annotation_summary.tsv` | One row per gene: copies and chromosomes on each haplotype, length and exon differences between the copies, MANE tag and annotation class (see [Annotation classes](#annotation-classes)). |
 | `reference/transcriptome_summary.tsv` | Transcripts per gene. |
 | `reference/liftoff/` | Liftoff output, when the annotation was lifted over. |
+
+#### Annotation classes
+
+Each gene gets one class (`Class`), from the copies of the gene on each chromosome of each haplotype:
+
+| Class | Copies of the gene |
+|---|---|
+| `Singleton` | One per haplotype on the same chromosome, with the same transcripts and exon number and less than 5% difference in spliced length. |
+| `Structural_difference` | One per haplotype on the same chromosome, differing in transcripts, exon number or more than 5% in spliced length. |
+| `Single_copy_different_chromosomes` | One per haplotype, on different chromosomes. |
+| `Paired_copies` | Several, with the same number on each chromosome in both haplotypes. |
+| `Unpaired_copies_same_chromosome` | Several, all on one chromosome, with a different number in each haplotype. |
+| `Unpaired_copies_several_chromosomes` | Several, on several chromosomes, with a different number on at least one of them. |
+| `One_haplotype` | On one haplotype only. |
 
 ### DNA
 
@@ -159,11 +173,11 @@ nextflow run pabloangulo7/longBayesASE-CN -profile singularity \
 | `diffase/ASE_input.gene.tsv` | The model input, when this step builds it. |
 | `priors/` | The priors and their QC, when this step simulates them. |
 
-The small table in `examples/toy_ase/` runs the step without sequencing data:
+`examples/ASE_input.tsv` runs the step without sequencing data:
 
 ```bash
 nextflow run . -profile conda --step diffase \
-  --ase_input examples/toy_ase/ASE_input.tsv --contrast Treatment:Control --outdir toy_results
+  --ase_input examples/ASE_input.tsv --contrast Treatment:Control --outdir toy_results
 ```
 
 ## Optional parameters
@@ -180,6 +194,7 @@ nextflow run . -profile conda --step diffase \
 | `--rna_strand` | `fw` | Orientation of the reads on their transcript: `fw` for oriented ONT cDNA, `rc` or `both`. |
 | `--oarfish_score` | `0.99999` | Fraction of the best alignment score an alignment needs to be used by Oarfish. Do not use exactly `1`: rounding then drops about 11% of the reads. |
 | `--oarfish_bootstraps` | `0` | Oarfish inferential replicates, for uncertainty-aware transcript analyses. |
+| `--oarfish_filters` | `false` | Apply the NanoCount filter group of Oarfish (minimum aligned length and fraction of the read, among others); `--oarfish_score` and `--rna_strand` still apply. |
 | `--prior_reads` | `2000` | Reads per feature, split among the libraries, whose positions are used to simulate the priors. |
 | `--min_prior_reads` | `10` | Minimum simulated reads per haplotype for a feature to get a prior. |
 | **diffASE** | | |
@@ -201,7 +216,7 @@ A read is H1 or H2 when all its best-scoring alignments fall on one haplotype, a
 
 ### Copy number
 
-DNA reads are classified in the same way. Only genes with a single annotated copy per haplotype (Singletons) set the diploid baseline and the chromosome medians. For each chromosome, the total copy number is the median depth of its Singletons over the baseline, and it is split into `CN_H1` and `CN_H2` with the median H1 share of their haplotype-specific depth; a chromosome within `--cn_change_threshold` of diploid is kept at 1:1.
+DNA reads are classified in the same way. Only Singletons (see [Annotation classes](#annotation-classes)) set the diploid baseline and the chromosome medians. For each chromosome, the total copy number is the median depth of its Singletons over the baseline, and it is split into `CN_H1` and `CN_H2` with the median H1 share of their haplotype-specific depth; a chromosome within `--cn_change_threshold` of diploid is kept at 1:1.
 
 Each allele of a gene takes the copy number of the homologue it lies on: `CN_H1` that of the H1 copy of `Chrom_H1`, and `CN_H2` that of the H2 copy of `Chrom_H2`, the chromosomes of the primary copy Liftoff placed on each haplotype. They differ for genes whose primary copies lie on different chromosomes, mostly in segmental duplications; a gene annotated on one haplotype only takes that chromosome for both. At transcript level, every transcript takes the copy number of its gene.
 
