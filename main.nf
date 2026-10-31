@@ -184,7 +184,7 @@ workflow EXPRESSION_WF {
     tx2gene
 
     main:
-    OARFISH_QUANT(bam, params.oarfish_score, params.rna_strand, params.oarfish_bootstraps)
+    OARFISH_QUANT(bam, params.oarfish_score, params.rna_strand, params.oarfish_bootstraps, params.oarfish_filters ? 'nanocount-filters' : 'no-filters')
     MERGE_OARFISH_QUANT(OARFISH_QUANT.out.quant.map { _meta, path -> path }.collect(), tx2gene)
 }
 

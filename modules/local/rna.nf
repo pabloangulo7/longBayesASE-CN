@@ -37,6 +37,7 @@ process OARFISH_QUANT {
     val score_threshold
     val strand
     val bootstraps
+    val filter_group
 
     output:
     tuple val(meta), path("${meta.sample}.quant"), emit: quant
@@ -49,7 +50,7 @@ process OARFISH_QUANT {
         -j ${task.cpus} \
         --alignments ${bam} \
         --output ${meta.sample} \
-        --filter-group no-filters \
+        --filter-group ${filter_group} \
         --strand-filter ${strand} \
         --score-threshold ${score_threshold} \
         --model-coverage \
