@@ -149,8 +149,8 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       fit1 <- sampling(object=compiled_model, data=datastan, chains=1, warmup=nburnin, iter=nsim, refresh=0, init=starting_values, pars=c("alpha", "theta"), cores=1, open_progress=FALSE, seed=seed)
       theta <- rstan::extract(fit1, pars = "theta")$theta
       alpha <- rstan::extract(fit1, pars = "alpha")$alpha
-      # Every draw on the same side: diffAI_pvalue is the bound 1/draws.
-      analysis_flag <- if (all(alpha[, 1] > alpha[, 2]) || all(alpha[, 1] < alpha[, 2])) "pvalue0" else "Success"
+      # Every draw on the same side: diffAI_ev is the bound 1/draws.
+      analysis_flag <- if (all(alpha[, 1] > alpha[, 2]) || all(alpha[, 1] < alpha[, 2])) "ev_bound" else "Success"
     }else{theta <- matrix(NA_real_,n_groups,n_groups); alpha <- matrix(NA_real_,n_groups,n_groups); analysis_flag <- "Skipped_Low_Counts"}
     # theta is the H1 share per copy. For plotting, the H1 share of the gene's
     # expression with the group's copy number put back: the allelic balance the
@@ -198,14 +198,14 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       groupB_thetaRaw_mean = mean(theta_raw[, 2]),
       groupB_thetaRaw_q025 = as.numeric(quantile(theta_raw[, 2], 0.025, na.rm=TRUE)),
       groupB_thetaRaw_q975 = as.numeric(quantile(theta_raw[, 2], 0.975, na.rm=TRUE)),
-      groupA_alphaAI_pvalue = tail_ev(alpha[, 1], 1),
-      groupA_thetaAI_pvalue = tail_ev(theta[, 1], 0.5),
-      groupB_alphaAI_pvalue = tail_ev(alpha[, 2], 1),
-      groupB_thetaAI_pvalue = tail_ev(theta[, 2], 0.5),
+      groupA_alphaAI_ev = tail_ev(alpha[, 1], 1),
+      groupA_thetaAI_ev = tail_ev(theta[, 1], 0.5),
+      groupB_alphaAI_ev = tail_ev(alpha[, 2], 1),
+      groupB_thetaAI_ev = tail_ev(theta[, 2], 0.5),
       delta_theta_mean = mean(theta[, 1]) - mean(theta[, 2]),
       delta_thetaRaw_mean = mean(theta_raw[, 1]) - mean(theta_raw[, 2]),
       delta_alpha_mean = mean(alpha[, 1]) - mean(alpha[, 2]),
-      diffAI_pvalue = tail_ev(alpha[, 1] - alpha[, 2], 0),
+      diffAI_ev = tail_ev(alpha[, 1] - alpha[, 2], 0),
       rope_value = mean(abs(theta[, 1] - theta[, 2]) < margin),
       analysis_flag = analysis_flag
     )
@@ -219,8 +219,8 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       groupB_alpha_mean=NA_real_, groupB_theta_mean=NA_real_, groupB_theta_q025=NA_real_, groupB_theta_q975=NA_real_,
       groupA_thetaRaw_mean=NA_real_, groupA_thetaRaw_q025=NA_real_, groupA_thetaRaw_q975=NA_real_,
       groupB_thetaRaw_mean=NA_real_, groupB_thetaRaw_q025=NA_real_, groupB_thetaRaw_q975=NA_real_,
-      groupA_alphaAI_pvalue=NA_real_, groupA_thetaAI_pvalue=NA_real_, groupB_alphaAI_pvalue=NA_real_, groupB_thetaAI_pvalue=NA_real_,
-      delta_theta_mean=NA_real_, delta_thetaRaw_mean=NA_real_, delta_alpha_mean=NA_real_, diffAI_pvalue=NA_real_, rope_value=NA_real_, analysis_flag=paste("Error:", e$message))
+      groupA_alphaAI_ev=NA_real_, groupA_thetaAI_ev=NA_real_, groupB_alphaAI_ev=NA_real_, groupB_thetaAI_ev=NA_real_,
+      delta_theta_mean=NA_real_, delta_thetaRaw_mean=NA_real_, delta_alpha_mean=NA_real_, diffAI_ev=NA_real_, rope_value=NA_real_, analysis_flag=paste("Error:", e$message))
     return(gene_res)
   })
 }

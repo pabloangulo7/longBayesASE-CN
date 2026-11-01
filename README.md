@@ -244,13 +244,13 @@ Every feature is fitted. `filter_flag` is `low_prior` when `min(r1, r2) <= --min
 
 ### Tests
 
-`diffAI_pvalue` is the evidence value of BayesASE:
+`diffAI_ev` is the evidence value of BayesASE:
 
 ```text
-diffAI_pvalue = 2 × min{ P(alpha_A > alpha_B), P(alpha_A < alpha_B) }
+diffAI_ev = 2 × min{ P(alpha_A > alpha_B), P(alpha_A < alpha_B) }
 ```
 
-It is the smallest level at which the central credible interval of `alpha_A - alpha_B` excludes 0. It is computed per feature, as in BayesASE, without multiple-testing correction. When every draw falls on one side, it is reported as `1/draws` with the flag `pvalue0`.
+It is the smallest level at which the central credible interval of `alpha_A - alpha_B` excludes 0. It is computed per feature, as in BayesASE, without multiple-testing correction. When every draw falls on one side, it is reported as `1/draws` with the flag `ev_bound`.
 
 `rope_value` is the posterior probability that `|theta_A - theta_B|` is smaller than the effect that full dosage compensation would have. That effect is computed per feature and per draw: it is the change in `theta` if group A kept the `thetaRaw` of group B despite its own copy number. When both groups have the same H1:H2 ratio, the effect of a 2:1 gain (averaged over gains of H1 and of H2) is used instead. A high `rope_value` therefore means that any difference between the groups is smaller than dosage compensation would produce.
 
@@ -265,11 +265,11 @@ It is the smallest level at which the central credible interval of `alpha_A - al
 | `groupX_alpha_mean` | Posterior mean of `alpha`. |
 | `groupX_theta_mean`, `_q025`, `_q975` | `theta` with its 95% credible interval. |
 | `groupX_thetaRaw_mean`, `_q025`, `_q975` | `thetaRaw` with its 95% credible interval. |
-| `groupX_alphaAI_pvalue`, `groupX_thetaAI_pvalue` | Evidence of allelic imbalance within the group (`alpha≠1`). |
+| `groupX_alphaAI_ev`, `groupX_thetaAI_ev` | Evidence of allelic imbalance within the group (`alpha≠1`). |
 | `delta_theta_mean`, `delta_thetaRaw_mean`, `delta_alpha_mean` | Differences between groups, A minus B. |
-| `diffAI_pvalue` | Evidence of differential allelic imbalance, corrected by copy number. |
+| `diffAI_ev` | Evidence of differential allelic imbalance, corrected by copy number. |
 | `rope_value` | Probability that the difference in `theta` is smaller than full dosage compensation. |
-| `analysis_flag` | `Success`, `pvalue0`, `Skipped_Low_Counts`, or the error. |
+| `analysis_flag` | `Success`, `ev_bound`, `Skipped_Low_Counts`, or the error. |
 | `filter_flag` | `pass` or `low_prior` (see [Model](#model)). |
 
 ## Citation

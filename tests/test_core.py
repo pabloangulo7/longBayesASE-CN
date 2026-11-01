@@ -500,7 +500,7 @@ def test_merge_ase_results_flags_features_with_uninformative_priors(tmp_path: Pa
         f"{group}{rep}\t{group}\t{gene}\t20\t20\t10\t1\t1\t{values}\n"
         for group in ("A", "B") for rep in (1, 2) for gene, values in priors.items()))
     shard = tmp_path / "shard.results.tsv"
-    shard.write_text("ID\ttest\tdiffAI_pvalue\n" + "".join(f"{gene}\tA_VS_B\t0.5\n" for gene in priors))
+    shard.write_text("ID\ttest\tdiffAI_ev\n" + "".join(f"{gene}\tA_VS_B\t0.5\n" for gene in priors))
 
     def flags(*options: object) -> dict[str, str]:
         output = tmp_path / "merged.tsv"
