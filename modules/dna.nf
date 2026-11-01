@@ -41,8 +41,11 @@ process DNA_MAX_SCORE {
     script:
     """
     # The classifier only needs each read's alignments to be adjacent, which
-    # collate gives without a full name sort.
-    samtools collate -@ ${task.cpus} -o input.namesort.bam ${bam}
+    # collate gives without a full name sort. collate groups one temporary file
+    # at a time in memory, so 512 files keep each one small for a whole-genome
+    # BAM, and the base-modification tags, not used here, are dropped first.
+    samtools view -@ ${task.cpus} -u -x MM,ML,MN ${bam} \
+      | samtools collate -@ ${task.cpus} -n 512 -T collate_tmp -o input.namesort.bam -
     classify_dna_alignments.py \
         --bam input.namesort.bam \
         --output-bam ${meta.dna_id}.maxscore.namesort.bam \
