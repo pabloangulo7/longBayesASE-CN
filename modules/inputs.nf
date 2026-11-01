@@ -74,7 +74,7 @@ process PREPARE_DNA_BAM {
     script:
     """
     if samtools view -H ${bam} | grep -q 'SO:coordinate'; then
-        ln -L ${bam} ${meta.dna_id}.dna.bam
+        ln -L ${bam} ${meta.dna_id}.dna.bam 2>/dev/null || cp -L ${bam} ${meta.dna_id}.dna.bam
     else
         samtools sort -@ ${task.cpus} -o ${meta.dna_id}.dna.bam ${bam}
     fi

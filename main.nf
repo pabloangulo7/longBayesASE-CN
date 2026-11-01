@@ -109,13 +109,15 @@ workflow DNA_WF {
         ) }
         .unique { item -> item[0].dna_id }
         .branch { _meta, paths ->
+            // A BAM with its index next to it is coordinate-sorted and is used where it is.
+            indexed: paths.size() == 1 && paths[0].name.toLowerCase().endsWith('.bam') && file("${paths[0]}.bai").exists()
             aligned: paths.size() == 1 && paths[0].name.toLowerCase().endsWith('.bam')
             raw: true
         }
     NORMALIZE_DNA_READS(input.raw)
     DNA_ALIGN(NORMALIZE_DNA_READS.out.reads, fasta)
     PREPARE_DNA_BAM(input.aligned.map { meta, paths -> tuple(meta, paths[0]) })
-    def bam = DNA_ALIGN.out.bam.mix(PREPARE_DNA_BAM.out.bam)
+    def bam = DNA_ALIGN.out.bam.mix(PREPARE_DNA_BAM.out.bam, input.indexed.map { meta, paths -> tuple(meta, paths[0], file("${paths[0]}.bai")) })
     DNA_MAX_SCORE(bam)
     DNA_FEATURE_ASSIGN(DNA_MAX_SCORE.out.maxscore, genes_saf)
     DNA_SPLIT(DNA_FEATURE_ASSIGN.out.split_input)

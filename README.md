@@ -66,7 +66,7 @@ Sample2_R1	Aneuploid	Sample2	/data/Sample2_R1.fastq.gz	/data/Sample2.fastq.gz	ch
 | `dna` | gDNA FASTQ, uBAM, or BAM aligned to the assembly. May be empty. |
 | `ploidy` | Known copy number, `chromosome:CN_H1:CN_H2` separated by semicolons. Empty for a diploid sample. |
 
-FASTQ and uBAM files are aligned with minimap2; a BAM is used as it is. Several raw files of one library can be separated by semicolons. `examples/samplesheet.tsv` is a template.
+FASTQ and uBAM files are aligned with minimap2; a BAM is used as it is. A gDNA BAM must keep the secondary alignments (minimap2 `-N 200`), which tell HS from NonHS reads; with its `.bai` index next to it, it is used where it is, without a copy. Several raw files of one library can be separated by semicolons. `examples/samplesheet.tsv` is a template.
 
 ## Steps
 
