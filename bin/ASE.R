@@ -106,8 +106,6 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     K <- nrow(gene_data)
     n_groups <- length(group_levels)
     xenv <- as.numeric(gene_data$group)
-    # tabulate counts a group with no library as 0, which table() would omit.
-    smallestGroupSize <- min(tabulate(xenv, nbins = n_groups))
     xs <- as.integer(gene_data$H1_counts)
     ys <- as.integer(gene_data$H2_counts)
     zs <- as.integer(gene_data$NonHS_counts)
@@ -137,21 +135,17 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
     mean_xs_vec <- sapply(1:n_groups, function(i) mean(datastan$xs[datastan$xenv == i]))
     mean_ys_vec <- sapply(1:n_groups, function(i) mean(datastan$ys[datastan$xenv == i]))
     mean_zs_vec <- sapply(1:n_groups, function(i) mean(datastan$zs[datastan$xenv == i]))
-    total_counts_sample <- datastan$xs + datastan$ys + datastan$zs
-    cond1 <- sum(total_counts_sample >= 10, na.rm = TRUE) >= smallestGroupSize
-    cond2 <- sum((r - r^2) != 0, na.rm = TRUE) > 0
-    cond3 <- smallestGroupSize >= 3
-    # A group where no library expresses the gene gives nothing to compare.
-    cond4 <- all(sapply(seq_len(n_groups), function(i) any(total_counts_sample[xenv == i] >= 10)))
-    if (cond1 && cond2 && cond3 && cond4) {
+    # The likelihood is undefined where a category has reads but an expected count of 0:
+    # a prior of 0, both priors of a group at 1 (no NonHS reads expected), or a haplotype without copies.
+    if (all(r > 0) && all(rowSums(r < 1) > 0) && all(cnv1 > 0 & cnv2 > 0)) {
       hyper_beta <- prior_empBayes_forbeta(xs, ys, zs, cnv1, cnv2)
       datastan <- c(datastan, list(a_beta = hyper_beta$a_beta, a_b_beta = hyper_beta$a_b_beta, b_b_beta = hyper_beta$b_b_beta))
       fit1 <- sampling(object=compiled_model, data=datastan, chains=1, warmup=nburnin, iter=nsim, refresh=0, init=starting_values, pars=c("alpha", "theta"), cores=1, open_progress=FALSE, seed=seed)
       theta <- rstan::extract(fit1, pars = "theta")$theta
       alpha <- rstan::extract(fit1, pars = "alpha")$alpha
       # Every draw on the same side: diffAI_ev is the bound 1/draws.
-      analysis_flag <- if (all(alpha[, 1] > alpha[, 2]) || all(alpha[, 1] < alpha[, 2])) "ev_bound" else "Success"
-    }else{theta <- matrix(NA_real_,n_groups,n_groups); alpha <- matrix(NA_real_,n_groups,n_groups); analysis_flag <- "Skipped_Low_Counts"}
+      status <- if (all(alpha[, 1] > alpha[, 2]) || all(alpha[, 1] < alpha[, 2])) "ev_bound" else "pass"
+    }else{theta <- matrix(NA_real_,n_groups,n_groups); alpha <- matrix(NA_real_,n_groups,n_groups); status <- "not_fitted"}
     # theta is the H1 share per copy. For plotting, the H1 share of the gene's
     # expression with the group's copy number put back: the allelic balance the
     # libraries show, which sits at 0.5 only where the haplotypes are equally dosed.
@@ -207,7 +201,7 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       delta_alpha_mean = mean(alpha[, 1]) - mean(alpha[, 2]),
       diffAI_ev = tail_ev(alpha[, 1] - alpha[, 2], 0),
       rope_value = mean(abs(theta[, 1] - theta[, 2]) < margin),
-      analysis_flag = analysis_flag
+      status = status
     )
     return(gene_res)
   }, error = function(e) {
@@ -220,7 +214,7 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       groupA_thetaRaw_mean=NA_real_, groupA_thetaRaw_q025=NA_real_, groupA_thetaRaw_q975=NA_real_,
       groupB_thetaRaw_mean=NA_real_, groupB_thetaRaw_q025=NA_real_, groupB_thetaRaw_q975=NA_real_,
       groupA_alphaAI_ev=NA_real_, groupA_thetaAI_ev=NA_real_, groupB_alphaAI_ev=NA_real_, groupB_thetaAI_ev=NA_real_,
-      delta_theta_mean=NA_real_, delta_thetaRaw_mean=NA_real_, delta_alpha_mean=NA_real_, diffAI_ev=NA_real_, rope_value=NA_real_, analysis_flag=paste("Error:", e$message))
+      delta_theta_mean=NA_real_, delta_thetaRaw_mean=NA_real_, delta_alpha_mean=NA_real_, diffAI_ev=NA_real_, rope_value=NA_real_, status=paste("error:", e$message))
     return(gene_res)
   })
 }

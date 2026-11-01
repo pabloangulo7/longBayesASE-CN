@@ -198,7 +198,7 @@ nextflow run . -profile conda --step diffase \
 | `--prior_reads` | `2000` | Reads per feature, split among the libraries, whose positions are used to simulate the priors. |
 | `--min_prior_reads` | `10` | Minimum simulated reads per haplotype for a feature to get a prior. |
 | **diffASE** | | |
-| `--min_prior` | `0.01` | Features with `min(r1, r2)` at or below this are flagged `low_prior`. |
+| `--min_prior` | `0.01` | Fitted features with `min(r1, r2)` at or below this get status `low_prior`. |
 | `--ase_shards` | `100` | Groups of features fitted in parallel, per contrast. |
 | `--ase_iterations` | `100000` | Stan iterations per feature. |
 | `--ase_warmup` | `10000` | Stan warmup iterations. |
@@ -240,7 +240,7 @@ thetaRaw = CN_H1 × theta / (CN_H1 × theta + CN_H2 × (1 - theta))
 
 The priors are those of BayesASE: `alpha ~ lognormal(0, 0.5)`, a gamma hierarchy for library size `beta`, and inverse-gamma(2.01, 0.05) overdispersion. Each feature is fitted on its own with Stan (one chain). Where a group has no read in a category, one read is added to its best-covered library, as in BayesASE, to keep `alpha` finite.
 
-Every feature is fitted. `filter_flag` is `low_prior` when `min(r1, r2) <= --min_prior`, and `pass` otherwise: in a `low_prior` feature few reads of one haplotype cover a heterozygous site, so its counts barely inform `alpha`, and a small error in `r1` or `r2` becomes a large error in the bias correction `r1/r2`.
+A feature is fitted unless the likelihood is undefined: a mapping prior of 0, both priors of a group at 1, or a haplotype without copies (`not_fitted`). A fitted feature gets `low_prior` when `min(r1, r2) <= --min_prior`: few reads of one haplotype cover a heterozygous site, so its counts barely inform `alpha`, and a small error in `r1` or `r2` becomes a large error in the bias correction `r1/r2`.
 
 ### Tests
 
@@ -250,7 +250,7 @@ Every feature is fitted. `filter_flag` is `low_prior` when `min(r1, r2) <= --min
 diffAI_ev = 2 × min{ P(alpha_A > alpha_B), P(alpha_A < alpha_B) }
 ```
 
-It is the smallest level at which the central credible interval of `alpha_A - alpha_B` excludes 0. It is computed per feature, as in BayesASE, without multiple-testing correction. When every draw falls on one side, it is reported as `1/draws` with the flag `ev_bound`.
+It is the smallest level at which the central credible interval of `alpha_A - alpha_B` excludes 0. It is computed per feature, as in BayesASE, without multiple-testing correction. When every draw falls on one side, it is reported as `1/draws` with status `ev_bound`.
 
 `rope_value` is the posterior probability that `|theta_A - theta_B|` is smaller than the effect that full dosage compensation would have. That effect is computed per feature and per draw: it is the change in `theta` if group A kept the `thetaRaw` of group B despite its own copy number. When both groups have the same H1:H2 ratio, the effect of a 2:1 gain (averaged over gains of H1 and of H2) is used instead. A high `rope_value` therefore means that any difference between the groups is smaller than dosage compensation would produce.
 
@@ -269,8 +269,7 @@ It is the smallest level at which the central credible interval of `alpha_A - al
 | `delta_theta_mean`, `delta_thetaRaw_mean`, `delta_alpha_mean` | Differences between groups, A minus B. |
 | `diffAI_ev` | Evidence of differential allelic imbalance, corrected by copy number. |
 | `rope_value` | Probability that the difference in `theta` is smaller than full dosage compensation. |
-| `analysis_flag` | `Success`, `ev_bound`, `Skipped_Low_Counts`, or the error. |
-| `filter_flag` | `pass` or `low_prior` (see [Model](#model)). |
+| `status` | `pass`, `ev_bound` (every draw on one side), `low_prior`, `not_fitted` (see [Model](#model)), or `error:` with the message. |
 
 ## Citation
 

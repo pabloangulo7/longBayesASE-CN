@@ -30,11 +30,11 @@ required = {
     "groupA_alphaAI_ev", "groupA_thetaAI_ev",
     "groupB_alphaAI_ev", "groupB_thetaAI_ev",
     "groupA_thetaRaw_mean", "groupB_thetaRaw_mean", "delta_thetaRaw_mean",
-    "diffAI_ev", "rope_value", "analysis_flag",
+    "diffAI_ev", "rope_value", "status",
 }
 assert required.issubset(results["GBASE"])
-assert results["GBASE"]["analysis_flag"] in {"Success", "ev_bound"}
-assert results["GGAIN"]["analysis_flag"] in {"Success", "ev_bound"}
+assert results["GBASE"]["status"] in {"pass", "ev_bound"}
+assert results["GGAIN"]["status"] in {"pass", "ev_bound"}
 assert float(results["GBASE"]["diffAI_ev"]) < 0.1
 assert float(results["GGAIN"]["diffAI_ev"]) > 0.1
 assert float(results["GGAIN"]["rope_value"]) > 0.5

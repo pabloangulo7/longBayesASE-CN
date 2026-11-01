@@ -500,13 +500,13 @@ def test_merge_ase_results_flags_features_with_uninformative_priors(tmp_path: Pa
         f"{group}{rep}\t{group}\t{gene}\t20\t20\t10\t1\t1\t{values}\n"
         for group in ("A", "B") for rep in (1, 2) for gene, values in priors.items()))
     shard = tmp_path / "shard.results.tsv"
-    shard.write_text("ID\ttest\tdiffAI_ev\n" + "".join(f"{gene}\tA_VS_B\t0.5\n" for gene in priors))
+    shard.write_text("ID\ttest\tdiffAI_ev\tstatus\n" + "".join(f"{gene}\tA_VS_B\t0.5\tpass\n" for gene in priors))
 
     def flags(*options: object) -> dict[str, str]:
         output = tmp_path / "merged.tsv"
         run_script("merge_ase_results.py", "--inputs", shard, "--ase-input", ase_input,
                    "--output", output, *options)
-        return {row["ID"]: row["filter_flag"] for row in read_tsv(output)}
+        return {row["ID"]: row["status"] for row in read_tsv(output)}
 
     assert flags() == {"GOOD": "pass", "ONEHAP": "low_prior"}
     assert flags("--min-prior", 0.0001) == {"GOOD": "pass", "ONEHAP": "pass"}
