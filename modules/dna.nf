@@ -7,7 +7,7 @@ process DNA_ALIGN {
     path diploid_fasta
 
     output:
-    tuple val(meta), path("${meta.dna_id}.dna.bam"), path("${meta.dna_id}.dna.bam.bai"), emit: bam
+    tuple val(meta), path("${meta.dna_id}.dna.bam"), emit: bam
 
     script:
     def rg = "@RG\\tID:${meta.dna_id}\\tPU:Unknown\\tPL:ONT\\tLB:${meta.dna_id}\\tSM:${meta.dna_id}"
@@ -18,13 +18,12 @@ process DNA_ALIGN {
         -R '${rg}' \
         -t ${task.cpus} \
         ${diploid_fasta} ${reads} \
-      | samtools sort -@ ${task.cpus} -o ${meta.dna_id}.dna.bam -
-    samtools index -@ ${task.cpus} ${meta.dna_id}.dna.bam
+      | samtools view -@ ${task.cpus} -b -o ${meta.dna_id}.dna.bam -
     """
 
     stub:
     """
-    touch ${meta.dna_id}.dna.bam ${meta.dna_id}.dna.bam.bai
+    touch ${meta.dna_id}.dna.bam
     """
 }
 
@@ -33,32 +32,31 @@ process DNA_MAX_SCORE {
     label 'process_high'
 
     input:
-    tuple val(meta), path(bam), path(bai)
+    tuple val(meta), path(bam)
 
     output:
-    tuple val(meta), path("${meta.dna_id}.maxscore.bam"), path("${meta.dna_id}.maxscore.bam.bai"), path("${meta.dna_id}.alignment_readgroups.tsv"), emit: maxscore
+    tuple val(meta), path("${meta.dna_id}.maxscore.bam"), path("${meta.dna_id}.alignment_readgroups.tsv"), emit: maxscore
 
     script:
     """
-    # The classifier only needs each read's alignments to be adjacent, which
-    # collate gives without a full name sort. collate groups one temporary file
-    # at a time in memory, so 512 files keep each one small for a whole-genome
-    # BAM, and the base-modification tags, not used here, are dropped first.
+    # This step and the next two read each read's alignments together, which
+    # collate gives without a full name sort; the output BAM and table keep
+    # that read order. collate groups one temporary file at a time in memory,
+    # so 512 files keep each one small for a whole-genome BAM, and the
+    # base-modification tags, not used here, are dropped first.
     samtools view -@ ${task.cpus} -u -x MM,ML,MN ${bam} \
-      | samtools collate -@ ${task.cpus} -n 512 -T collate_tmp -o input.namesort.bam -
+      | samtools collate -@ ${task.cpus} -n 512 -T collate_tmp -o input.collated.bam -
     classify_dna_alignments.py \
-        --bam input.namesort.bam \
-        --output-bam ${meta.dna_id}.maxscore.namesort.bam \
+        --bam input.collated.bam \
+        --output-bam ${meta.dna_id}.maxscore.bam \
         --readgroups ${meta.dna_id}.alignment_readgroups.tsv \
         --threads ${task.cpus}
-    samtools sort -@ ${task.cpus} -o ${meta.dna_id}.maxscore.bam ${meta.dna_id}.maxscore.namesort.bam
-    samtools index -@ ${task.cpus} ${meta.dna_id}.maxscore.bam
-    rm input.namesort.bam ${meta.dna_id}.maxscore.namesort.bam
+    rm input.collated.bam
     """
 
     stub:
     """
-    touch ${meta.dna_id}.maxscore.bam ${meta.dna_id}.maxscore.bam.bai
+    touch ${meta.dna_id}.maxscore.bam
     printf 'Read_ID\tH1\tH2\tGroup\tMax_Score\tUnclassified\n' > ${meta.dna_id}.alignment_readgroups.tsv
     """
 }
@@ -68,11 +66,11 @@ process DNA_FEATURE_ASSIGN {
     label 'process_high'
 
     input:
-    tuple val(meta), path(coord_bam, stageAs: 'maxscore_input/*'), path(bai), path(alignment_groups)
+    tuple val(meta), path(bam), path(alignment_groups)
     path genes_saf
 
     output:
-    tuple val(meta), path("${meta.dna_id}.maxscore.bam"), path("${meta.dna_id}.readgroups_genes.tsv"), emit: split_input
+    tuple val(meta), path("${meta.dna_id}.readgroups_genes.tsv"), emit: readgroups
     tuple val(meta), path("${meta.dna_id}.gene_counts.tsv"), emit: counts
     tuple val(meta), path("${meta.dna_id}.mapping_qc.tsv"), path("${meta.dna_id}.complex_reads.tsv"), emit: qc
 
@@ -82,17 +80,15 @@ process DNA_FEATURE_ASSIGN {
         -T ${task.cpus} -O -Q 0 -L -M -R CORE -F SAF -s 0 \
         -a ${genes_saf} \
         -o ${meta.dna_id}.featureCounts.txt \
-        ${coord_bam}
+        ${bam}
     classify_dna_genes.py \
-        --featurecounts ${meta.dna_id}.maxscore.bam.featureCounts \
+        --featurecounts ${bam}.featureCounts \
         --readgroups ${alignment_groups} \
         --output-prefix ${meta.dna_id}
-    ln -L ${coord_bam} ${meta.dna_id}.maxscore.bam
     """
 
     stub:
     """
-    touch ${meta.dna_id}.maxscore.bam
     printf 'Read_ID\tGroup\n' > ${meta.dna_id}.readgroups_genes.tsv
     printf 'GID\tH1\tH1_multigene\tH1_multimapping\tH1_multimapping_multigene\tH1_multimapping_multigene_copy\tH1_multimapping_multigene_diff\tH2\tH2_multigene\tH2_multimapping\tH2_multimapping_multigene\tH2_multimapping_multigene_copy\tH2_multimapping_multigene_diff\tNonHS\tNonHS_multigene\tNonHS_multimapping\tNonHS_multimapping_multigene\tNonHS_multigene_copy\tNonHS_multimapping_multigene_copy\tNonHS_multimapping_multigene_diff\tNonHS_complex\tNonHS_multimapping_complex\tUnclassified\nGENE1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\n' > ${meta.dna_id}.gene_counts.tsv
     printf 'category\treads\n' > ${meta.dna_id}.mapping_qc.tsv
@@ -105,7 +101,7 @@ process DNA_SPLIT {
     label 'process_medium'
 
     input:
-    tuple val(meta), path(coord_bam), path(readgroups)
+    tuple val(meta), path(bam), path(readgroups)
 
     output:
     tuple val(meta), path("${meta.dna_id}.HS.bam"), path("${meta.dna_id}.NonHS.bam"), path("${meta.dna_id}.HS_copy.bam"), path("${meta.dna_id}.NonHS_copy.bam"), emit: bams
@@ -113,7 +109,7 @@ process DNA_SPLIT {
     script:
     """
     split_dna_bam.py \
-        --bam ${coord_bam} \
+        --bam ${bam} \
         --readgroups ${readgroups} \
         --output-prefix split \
         --threads ${task.cpus}

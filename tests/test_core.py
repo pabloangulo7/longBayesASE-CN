@@ -173,10 +173,10 @@ def test_dna_copy_multimapping_classification(tmp_path: Path) -> None:
     assert counts[0]["H1_multimapping_multigene_copy"] == "1"
 
 
-def test_dna_split_uses_coordinate_bam_and_readgroup_dictionary(tmp_path: Path) -> None:
+def test_dna_split_reads_alignments_grouped_by_read(tmp_path: Path) -> None:
     bam = tmp_path / "maxscore.bam"
     header = {
-        "HD": {"VN": "1.6", "SO": "coordinate"},
+        "HD": {"VN": "1.6", "SO": "unsorted"},
         "SQ": [
             {"SN": "chr1_hap1", "LN": 1000},
             {"SN": "chr1_hap2", "LN": 1000},
@@ -198,14 +198,14 @@ def test_dna_split_uses_coordinate_bam_and_readgroup_dictionary(tmp_path: Path) 
 
     with pysam.AlignmentFile(bam, "wb", header=header) as handle:
         # r1 has two co-optimal H1 loci: the first one in coordinate order,
-        # chr1_hap1, is kept.
+        # chr1_hap1, is kept, although it comes second in the BAM.
+        handle.write(alignment("r1", 2, 10))
         handle.write(alignment("r1", 0, 100))
         handle.write(alignment("r2", 0, 200))
         handle.write(alignment("r2", 1, 200))
-        handle.write(alignment("r1", 2, 10))
 
     groups = tmp_path / "groups.tsv"
-    groups.write_text("Read_ID\tGroup\nr2\tNonHS\nr1\tH1_multimapping\n")
+    groups.write_text("Read_ID\tGroup\nr1\tH1_multimapping\nr2\tNonHS\n")
     prefix = tmp_path / "split"
     run_script(
         "split_dna_bam.py",

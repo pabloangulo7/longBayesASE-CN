@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import re
 from collections import Counter, defaultdict
 
@@ -64,64 +65,59 @@ def classify(info: dict, readgroup: str) -> str:
     ) if n_genes > 0 else "Unassigned"
 
 
+def read_genes(rows) -> dict:
+    """Genes of the featureCounts CORE rows of one read, one row per alignment."""
+    info = {"genes": [], "genes_total": set(), "genes_HP": defaultdict(set), "has_unassigned": False}
+    for row in rows:
+        if len(row) != 4:
+            raise ValueError(f"featureCounts CORE row must have four columns: {row}")
+        _read_id, status, _n, genes_raw = row
+        if status.startswith("Unassigned"):
+            info["has_unassigned"] = True
+            continue
+        gene_list = []
+        for gene_raw in genes_raw.split(","):
+            gene_id, hap = split_hap(gene_raw)
+            gene_list.append(gene_id)
+            info["genes_total"].add(gene_id)
+            info["genes_HP"][hap].add(gene_id)
+        info["genes"].append(gene_list)
+    return info
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--featurecounts", required=True)
-    parser.add_argument("--readgroups", required=True)
+    parser.add_argument("--featurecounts", required=True, help="featureCounts CORE output of a BAM grouped by read")
+    parser.add_argument("--readgroups", required=True, help="read groups in the same read order")
     parser.add_argument("--output-prefix", required=True)
     args = parser.parse_args()
-
-    with open(args.readgroups) as handle:
-        readgroup_map = {
-            row["Read_ID"]: row["Group"] for row in csv.DictReader(handle, delimiter="\t")
-        }
-    read_info = defaultdict(
-        lambda: {
-            "genes": [],
-            "genes_total": set(),
-            "genes_HP": defaultdict(set),
-            "has_unassigned": False,
-        }
-    )
-    with open(args.featurecounts) as handle:
-        for row in csv.reader(handle, delimiter="\t"):
-            if not row:
-                continue
-            if len(row) != 4:
-                raise ValueError(f"featureCounts CORE row must have four columns: {row}")
-            read_id, status, _n, genes_raw = row
-            info = read_info[read_id]
-            if status.startswith("Unassigned"):
-                info["has_unassigned"] = True
-            else:
-                gene_list = []
-                for gene_raw in genes_raw.split(","):
-                    gene_id, hap = split_hap(gene_raw)
-                    gene_list.append(gene_id)
-                    info["genes_total"].add(gene_id)
-                    info["genes_HP"][hap].add(gene_id)
-                info["genes"].append(gene_list)
 
     gene_counts = defaultdict(Counter)
     complex_reads = defaultdict(list)
     qc = Counter()
-    for read_id, info in read_info.items():
-        group = classify(info, readgroup_map.get(read_id, "Unclassified"))
-        info["readgroup_gene"] = group
-        genes = info["genes_total"]
-        qc[group] += 1
-        if not genes:
-            continue
-        genes_to_count = {clean_gene_id(gene) for gene in genes} if group.endswith("_copy") else genes
-        for gene in genes_to_count:
-            if group in COMPLEX_CATEGORIES:
-                complex_reads[gene].append(read_id)
-            gene_counts[gene][group] += 1
-
-    with open(args.output_prefix + ".readgroups_genes.tsv", "w") as out:
+    # Both tables list the reads in the order of the BAM, so each read is
+    # classified as it is read and nothing is kept per read.
+    with open(args.featurecounts) as core, open(args.readgroups) as groups, \
+            open(args.output_prefix + ".readgroups_genes.tsv", "w") as out:
+        readgroups = csv.DictReader(groups, delimiter="\t")
         out.write("Read_ID\tGroup\n")
-        for read_id, info in read_info.items():
-            out.write(f"{read_id}\t{info['readgroup_gene']}\n")
+        for read_id, rows in itertools.groupby((row for row in csv.reader(core, delimiter="\t") if row), key=lambda row: row[0]):
+            row = next(readgroups, None)
+            if row is None or row["Read_ID"] != read_id:
+                raise ValueError(f"read {read_id}: the featureCounts and read-group tables are not in the same read order")
+            info = read_genes(rows)
+            group = classify(info, row["Group"])
+            out.write(f"{read_id}\t{group}\n")
+            qc[group] += 1
+            genes = info["genes_total"]
+            if not genes:
+                continue
+            genes_to_count = {clean_gene_id(gene) for gene in genes} if group.endswith("_copy") else genes
+            for gene in genes_to_count:
+                if group in COMPLEX_CATEGORIES:
+                    complex_reads[gene].append(read_id)
+                gene_counts[gene][group] += 1
+
     with open(args.output_prefix + ".gene_counts.tsv", "w") as out:
         out.write("GID\t" + "\t".join(CATEGORIES) + "\n")
         for gene, counts in gene_counts.items():

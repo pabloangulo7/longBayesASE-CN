@@ -61,32 +61,6 @@ process NORMALIZE_READS {
     """
 }
 
-process PREPARE_DNA_BAM {
-    tag "${meta.dna_id}"
-    label 'process_medium'
-
-    input:
-    tuple val(meta), path(bam)
-
-    output:
-    tuple val(meta), path("${meta.dna_id}.dna.bam"), path("${meta.dna_id}.dna.bam.bai"), emit: bam
-
-    script:
-    """
-    if samtools view -H ${bam} | grep -q 'SO:coordinate'; then
-        ln -L ${bam} ${meta.dna_id}.dna.bam 2>/dev/null || cp -L ${bam} ${meta.dna_id}.dna.bam
-    else
-        samtools sort -@ ${task.cpus} -o ${meta.dna_id}.dna.bam ${bam}
-    fi
-    samtools index -@ ${task.cpus} ${meta.dna_id}.dna.bam
-    """
-
-    stub:
-    """
-    touch ${meta.dna_id}.dna.bam ${meta.dna_id}.dna.bam.bai
-    """
-}
-
 process PREPARE_RNA_BAM {
     tag "${meta.sample}"
     label 'process_low'

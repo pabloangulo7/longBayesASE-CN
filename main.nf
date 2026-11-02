@@ -1,6 +1,6 @@
 #!/usr/bin/env nextflow
 
-include { VALIDATE_SAMPLESHEET; NORMALIZE_READS as NORMALIZE_DNA_READS; NORMALIZE_READS as NORMALIZE_RNA_READS; PREPARE_DNA_BAM; PREPARE_RNA_BAM } from './modules/inputs'
+include { VALIDATE_SAMPLESHEET; NORMALIZE_READS as NORMALIZE_DNA_READS; NORMALIZE_READS as NORMALIZE_RNA_READS; PREPARE_RNA_BAM } from './modules/inputs'
 include { PREPARE_REFERENCE; SPLIT_DIPLOID_GFF; LIFTOFF_ANNOTATE; BUILD_ANNOTATION_BUNDLE; BUILD_FEATURE_MAP } from './modules/annotation'
 include { DNA_ALIGN; DNA_MAX_SCORE; DNA_FEATURE_ASSIGN; DNA_SPLIT; DNA_COVERAGE; COMPUTE_COPY_NUMBER; COPY_NUMBER_FROM_PLOIDY } from './modules/dna'
 include { RNA_ALIGN; OARFISH_QUANT; RNA_HAPLOTYPE_COUNT; MERGE_HS_COUNTS as MERGE_GENE_HS_COUNTS; MERGE_HS_COUNTS as MERGE_TRANSCRIPT_HS_COUNTS; MERGE_OARFISH_QUANT } from './modules/rna'
@@ -109,18 +109,16 @@ workflow DNA_WF {
         ) }
         .unique { item -> item[0].dna_id }
         .branch { _meta, paths ->
-            // A BAM with its index next to it is coordinate-sorted and is used where it is.
-            indexed: paths.size() == 1 && paths[0].name.toLowerCase().endsWith('.bam') && file("${paths[0]}.bai").exists()
             aligned: paths.size() == 1 && paths[0].name.toLowerCase().endsWith('.bam')
             raw: true
         }
     NORMALIZE_DNA_READS(input.raw)
     DNA_ALIGN(NORMALIZE_DNA_READS.out.reads, fasta)
-    PREPARE_DNA_BAM(input.aligned.map { meta, paths -> tuple(meta, paths[0]) })
-    def bam = DNA_ALIGN.out.bam.mix(PREPARE_DNA_BAM.out.bam, input.indexed.map { meta, paths -> tuple(meta, paths[0], file("${paths[0]}.bai")) })
+    // An aligned BAM is used as it is, in any order: DNA_MAX_SCORE groups each read's alignments.
+    def bam = DNA_ALIGN.out.bam.mix(input.aligned.map { meta, paths -> tuple(meta, paths[0]) })
     DNA_MAX_SCORE(bam)
     DNA_FEATURE_ASSIGN(DNA_MAX_SCORE.out.maxscore, genes_saf)
-    DNA_SPLIT(DNA_FEATURE_ASSIGN.out.split_input)
+    DNA_SPLIT(DNA_MAX_SCORE.out.maxscore.map { meta, maxscore_bam, _groups -> tuple(meta, maxscore_bam) }.join(DNA_FEATURE_ASSIGN.out.readgroups))
     DNA_COVERAGE(DNA_SPLIT.out.bams, genes_bed)
     COMPUTE_COPY_NUMBER(
         samplesheet, annotation_summary,

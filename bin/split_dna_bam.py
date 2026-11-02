@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Split coordinate-sorted co-optimal DNA alignments into coverage groups."""
+"""Split co-optimal DNA alignments, grouped by read, into coverage groups."""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import re
 import sys
 
@@ -21,14 +22,6 @@ VALID_READGROUPS = {
 }
 
 
-def read_groups(path: str) -> dict[str, str]:
-    with open(path) as handle:
-        return {
-            row["Read_ID"]: row["Group"]
-            for row in csv.DictReader(handle, delimiter="\t")
-        }
-
-
 def target_group(group: str) -> str | None:
     if group not in VALID_READGROUPS:
         return None
@@ -43,8 +36,8 @@ def target_group(group: str) -> str | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bam", required=True, help="coordinate-sorted max-score BAM")
-    parser.add_argument("--readgroups", required=True, help="gene read-group TSV")
+    parser.add_argument("--bam", required=True, help="max-score BAM grouped by read")
+    parser.add_argument("--readgroups", required=True, help="gene read groups in the same read order")
     parser.add_argument("--output-prefix", required=True)
     parser.add_argument("--hap1-regex", default=r"_hap1(?:$|_)")
     parser.add_argument("--hap2-regex", default=r"_hap2(?:$|_)")
@@ -53,36 +46,37 @@ def main() -> None:
     hap1_pattern = re.compile(args.hap1_regex)
     hap2_pattern = re.compile(args.hap2_regex)
 
-    destinations = {
-        read_id: destination
-        for read_id, group in read_groups(args.readgroups).items()
-        if (destination := target_group(group)) is not None
-    }
     unclassified = 0
-    with pysam.AlignmentFile(args.bam, "rb", threads=args.threads) as source:
+    with pysam.AlignmentFile(args.bam, "rb", threads=args.threads) as source, open(args.readgroups) as groups:
+        readgroups = csv.DictReader(groups, delimiter="\t")
         outputs = {
             name: pysam.AlignmentFile(f"{args.output_prefix}.{name}.bam", "wb", template=source, threads=args.threads)
             for name in ("HS", "NonHS", "HS_copy", "NonHS_copy")
         }
         try:
-            seen_haplotypes: dict[str, set[str]] = {"H1": set(), "H2": set()}
-            for alignment in source:
-                read_name = alignment.query_name
-                destination = destinations.get(read_name)
+            for read_name, alignments in itertools.groupby(source, key=lambda alignment: alignment.query_name):
+                row = next(readgroups, None)
+                if row is None or row["Read_ID"] != read_name:
+                    raise ValueError(f"read {read_name}: the BAM and the read-group table are not in the same read order")
+                destination = target_group(row["Group"])
                 if destination is None:
                     continue
-                reference = source.get_reference_name(alignment.reference_id)
-                if hap1_pattern.search(reference):
-                    hap = "H1"
-                elif hap2_pattern.search(reference):
-                    hap = "H2"
-                else:
-                    unclassified += 1
-                    continue
-                if read_name in seen_haplotypes[hap]:
-                    continue
-                outputs[destination].write(alignment)
-                seen_haplotypes[hap].add(read_name)
+                # One alignment per haplotype: the first in coordinate order.
+                kept: dict[str, pysam.AlignedSegment] = {}
+                for alignment in alignments:
+                    reference = source.get_reference_name(alignment.reference_id)
+                    if hap1_pattern.search(reference):
+                        hap = "H1"
+                    elif hap2_pattern.search(reference):
+                        hap = "H2"
+                    else:
+                        unclassified += 1
+                        continue
+                    position = (alignment.reference_id, alignment.reference_start)
+                    if hap not in kept or position < (kept[hap].reference_id, kept[hap].reference_start):
+                        kept[hap] = alignment
+                for alignment in kept.values():
+                    outputs[destination].write(alignment)
         finally:
             for handle in outputs.values():
                 handle.close()
