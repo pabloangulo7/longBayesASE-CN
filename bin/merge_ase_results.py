@@ -28,21 +28,17 @@ def main() -> None:
     args = parser.parse_args()
     low_prior = load_low_prior(args.ase_input, args.min_prior)
     rows = []
-    fields = None
     for path in args.inputs:
         with open(path) as handle:
             reader = csv.DictReader(handle, delimiter="\t")
-            if fields is None:
-                fields = reader.fieldnames
-            elif reader.fieldnames != fields:
-                raise ValueError(f"ASE result schema differs in {path}")
+            fields = reader.fieldnames
             rows.extend(reader)
     for row in rows:
         if row["ID"] in low_prior and row["status"] in ("pass", "ev_bound"):
             row["status"] = "low_prior"
     rows.sort(key=lambda row: (row.get("test", ""), row.get("ID", "")))
     with open(args.output, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields or ["ID", "test", "status"],
+        writer = csv.DictWriter(handle, fieldnames=fields,
                                 delimiter="\t", lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)

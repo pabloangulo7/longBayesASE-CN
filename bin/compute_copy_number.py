@@ -68,14 +68,8 @@ def main() -> None:
             expected_ploidy[dna].update(parse_ploidy(row.get("ploidy", "")))
 
     depth: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    seen_groups: dict[str, set[str]] = defaultdict(set)
     for path in args.coverage:
-        match = COVERAGE_RE.match(Path(path).name)
-        if not match:
-            raise ValueError(f"unrecognized coverage filename: {path}")
-        dna, group = match.group("dna"), match.group("group")
-        if group in {"HS", "NonHS"}:
-            seen_groups[dna].add(group)
+        dna, group = COVERAGE_RE.match(Path(path).name).group("dna", "group")
         with open(path) as handle:
             for row in csv.reader(handle, delimiter="\t"):
                 if not row or row[0].startswith("#"):
@@ -92,11 +86,6 @@ def main() -> None:
                     depth[(dna, gid)][f"{hap}_copy"] += value
                 elif group == "NonHS_copy" and hap == "H1":
                     depth[(dna, gid)]["NonHS_copy"] += value
-
-    for dna in dna_ids:
-        missing = {"HS", "NonHS"} - seen_groups[dna]
-        if missing:
-            raise ValueError(f"DNA input {dna} is missing coverage groups: {', '.join(sorted(missing))}")
 
     output_rows = []
     qc_rows = []

@@ -16,17 +16,14 @@ COLUMNS = ["sample", "condition", "dna_id", "rna", "dna", "ploidy"]
 PLOIDY_ITEM = re.compile(r"^[^:;,\s]+:(?:\d+(?:\.\d+)?):(?:\d+(?:\.\d+)?)$")
 
 
-def existing_paths(value: str, base: Path, label: str, row_number: int) -> str:
+def resolve_paths(value: str, base: Path, label: str, row_number: int) -> str:
     if not value:
         return ""
     resolved = []
     for item in value.split(";"):
         path = Path(os.path.expandvars(os.path.expanduser(item.strip())))
         path = path if path.is_absolute() else base / path
-        path = path.resolve()
-        if not path.exists():
-            raise ValueError(f"row {row_number}: {label} file does not exist: {path}")
-        resolved.append(str(path))
+        resolved.append(str(path.resolve()))
     aligned = [path.lower().endswith(".bam") for path in resolved]
     if any(aligned) and (len(resolved) != 1 or not all(aligned)):
         raise ValueError(f"row {row_number}: an aligned {label} BAM must be the only {label} file")
@@ -80,8 +77,8 @@ def main() -> None:
                     raise ValueError(f"row {row_number}: invalid character in {required}: {row[required]}")
             if row["sample"] in seen_samples:
                 raise ValueError(f"row {row_number}: duplicate sample: {row['sample']}")
-            row["rna"] = existing_paths(row["rna"], source.parent, "RNA", row_number)
-            row["dna"] = existing_paths(row["dna"], source.parent, "DNA", row_number)
+            row["rna"] = resolve_paths(row["rna"], source.parent, "RNA", row_number)
+            row["dna"] = resolve_paths(row["dna"], source.parent, "DNA", row_number)
             row["ploidy"] = validate_ploidy(row["ploidy"], row_number)
             if args.step in {"all", "rna"} and not row["rna"]:
                 raise ValueError(f"row {row_number}: step {args.step} requires an RNA file")

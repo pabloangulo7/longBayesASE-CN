@@ -21,8 +21,6 @@ def main() -> None:
             if not line.strip() or line.startswith("#"):
                 continue
             fields = line.rstrip("\n").split("\t")
-            if len(fields) != 9:
-                raise ValueError(f"{args.gff3}:{line_number}: expected 9 GFF3 columns")
             if "_hap1" in fields[0]:
                 h1.write(line if line.endswith("\n") else line + "\n")
                 counts["hap1"] += 1

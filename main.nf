@@ -24,7 +24,7 @@ def requiredFile(value, label) {
     channel.value(file(value, checkIfExists: true))
 }
 
-def emptyTx2gene() { channel.value(file("${projectDir}/assets/empty_tx2gene.tsv", checkIfExists: true)) }
+def emptyTx2gene() { channel.value(file("${projectDir}/assets/empty_tx2gene.tsv")) }
 
 def transcriptLevel() { params.level == 'transcript' }
 
@@ -223,7 +223,7 @@ workflow DIFFASE_WF {
     ase_input
 
     main:
-    COMPILE_ASE_MODEL(channel.value(file("${projectDir}/bin/ASE_model.stan", checkIfExists: true)))
+    COMPILE_ASE_MODEL(channel.value(file("${projectDir}/bin/ASE_model.stan")))
     SPLIT_ASE_INPUT(ase_input, params.contrast, params.ase_shards)
     RUN_ASE_SHARD(SPLIT_ASE_INPUT.out.shards.flatten(), COMPILE_ASE_MODEL.out.model,
                   params.ase_iterations, params.ase_warmup, params.seed)

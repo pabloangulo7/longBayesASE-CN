@@ -68,10 +68,7 @@ def classify(info: dict, readgroup: str) -> str:
 def read_genes(rows) -> dict:
     """Genes of the featureCounts CORE rows of one read, one row per alignment."""
     info = {"genes": [], "genes_total": set(), "genes_HP": defaultdict(set), "has_unassigned": False}
-    for row in rows:
-        if len(row) != 4:
-            raise ValueError(f"featureCounts CORE row must have four columns: {row}")
-        _read_id, status, _n, genes_raw = row
+    for _read_id, status, _n, genes_raw in rows:
         if status.startswith("Unassigned"):
             info["has_unassigned"] = True
             continue

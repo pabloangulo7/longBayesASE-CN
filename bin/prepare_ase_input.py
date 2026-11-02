@@ -31,10 +31,7 @@ def load_priors(path: str) -> dict[str, tuple[float, float]]:
         if not {"ID", "H1_prior", "H2_prior"}.issubset(reader.fieldnames or []):
             raise ValueError("priors require columns: ID, H1_prior, H2_prior")
         for row in reader:
-            r1, r2 = float(row["H1_prior"]), float(row["H2_prior"])
-            if not 0 < r1 < 1 or not 0 < r2 < 1:
-                raise ValueError(f"feature {row['ID']}: priors must be strictly between 0 and 1")
-            priors[row["ID"]] = r1, r2
+            priors[row["ID"]] = float(row["H1_prior"]), float(row["H2_prior"])
     return priors
 
 

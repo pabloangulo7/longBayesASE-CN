@@ -28,12 +28,10 @@ def parse(path: str) -> tuple[dict[str, dict], dict[str, tuple[str, str]]]:
     genes: dict[str, dict] = {}
     transcripts: dict[str, tuple[str, str]] = {}
     with open(path) as handle:
-        for line_number, line in enumerate(handle, 1):
+        for line in handle:
             if not line.strip() or line.startswith("#"):
                 continue
             fields = line.rstrip("\n").split("\t")
-            if len(fields) != 9:
-                raise ValueError(f"{path}:{line_number}: expected 9 GFF3 columns")
             feature_type = fields[2].lower()
             if feature_type != "gene" and feature_type not in TRANSCRIPT_TYPES:
                 continue

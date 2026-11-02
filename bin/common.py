@@ -85,21 +85,9 @@ def gene_of(tx2gene: Dict[str, str], transcript: str) -> str:
 
 
 def files_by_sample(paths: Iterable[str], suffix: str) -> Dict[str, str]:
-    """Map each sample to its per-library file, named <sample><suffix>.
-
-    suffix is a regular expression; two files for one sample are an error.
-    """
+    """Map each sample to its per-library file, named <sample><suffix> (suffix: a regular expression)."""
     pattern = re.compile(rf"^(?P<sample>.+){suffix}$")
-    by_sample: Dict[str, str] = {}
-    for path in paths:
-        match = pattern.match(Path(path).name)
-        if not match:
-            raise ValueError(f"cannot identify the sample from the file name: {path}")
-        sample = match.group("sample")
-        if sample in by_sample:
-            raise ValueError(f"two files for sample {sample}: {by_sample[sample]} and {path}")
-        by_sample[sample] = path
-    return by_sample
+    return {pattern.match(Path(path).name).group("sample"): path for path in paths}
 
 
 def fasta_records(path: str | Path) -> Iterator[Tuple[str, str, str]]:

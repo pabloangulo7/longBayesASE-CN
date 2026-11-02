@@ -61,12 +61,10 @@ def parse_annotation(path: str, hap: str, combined_gff):
 
     gene_by_feature: dict[str, GeneCopy] = {}
     with open(path) as handle:
-        for line_number, line in enumerate(handle, 1):
+        for line in handle:
             if not line.strip() or line.startswith("#"):
                 continue
             fields = line.rstrip("\n").split("\t")
-            if len(fields) != 9:
-                raise ValueError(f"{path}:{line_number}: expected 9 GFF/GTF columns")
             combined_gff.write(line if line.endswith("\n") else line + "\n")
             attrs = parse_gff_attributes(fields[8])
             feature_type = fields[2].lower()
