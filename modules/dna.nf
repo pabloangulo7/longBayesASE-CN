@@ -141,11 +141,16 @@ process DNA_COVERAGE {
 
     script:
     """
+    # With -sorted, bedtools streams the reads instead of loading a whole-genome
+    # BAM into memory; the genes must follow the contig order of the BAM.
+    samtools view -H ${meta.dna_id}.HS.bam \
+      | awk -F'\\t' '\$1 == "@SQ" { for (i = 2; i <= NF; i++) { if (\$i ~ /^SN:/) sn = substr(\$i, 4); if (\$i ~ /^LN:/) ln = substr(\$i, 4) } print sn "\\t" ln }' > genome.txt
+    bedtools sort -g genome.txt -i ${genes_bed} > genes.sorted.bed
     # The four read groups are independent, so they run in parallel; each one is
     # waited for by PID so that a failure fails the task.
     pids=()
     for group in HS NonHS HS_copy NonHS_copy; do
-        bedtools coverage -a ${genes_bed} -b ${meta.dna_id}.\${group}.bam -mean \
+        bedtools coverage -sorted -g genome.txt -a genes.sorted.bed -b ${meta.dna_id}.\${group}.bam -mean \
           | awk 'BEGIN{OFS="\\t"}{print \$4,\$NF}' > ${meta.dna_id}.\${group}.coverage.tsv &
         pids+=(\$!)
     done
