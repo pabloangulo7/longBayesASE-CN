@@ -114,7 +114,7 @@ workflow DNA_WF {
         }
     NORMALIZE_DNA_READS(input.raw)
     DNA_ALIGN(NORMALIZE_DNA_READS.out.reads, fasta)
-    // An aligned BAM is used as it is, in any order: DNA_MAX_SCORE groups each read's alignments.
+    // An aligned BAM is not realigned and can be in any order: DNA_MAX_SCORE groups the alignments of each read.
     def bam = DNA_ALIGN.out.bam.mix(input.aligned.map { meta, paths -> tuple(meta, paths[0]) })
     DNA_MAX_SCORE(bam)
     DNA_FEATURE_ASSIGN(DNA_MAX_SCORE.out.maxscore, genes_saf)

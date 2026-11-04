@@ -66,7 +66,7 @@ Sample2_R1	Aneuploid	Sample2	/data/Sample2_R1.fastq.gz	/data/Sample2.fastq.gz	ch
 | `dna` | gDNA FASTQ, uBAM, or BAM aligned to the assembly. May be empty. |
 | `ploidy` | Known copy number, `chromosome:CN_H1:CN_H2` separated by semicolons. Empty for a diploid sample. |
 
-FASTQ and uBAM files are aligned with minimap2; a BAM is used as it is. Several raw files of one library can be separated by semicolons. `examples/samplesheet.tsv` is a template.
+FASTQ and uBAM files are aligned with minimap2. A `.bam` file is taken as already aligned and is not realigned, so it must be aligned to the same reference and keep the secondary alignments (minimap2 `-N`), from which the haplotype of each read is decided. Several FASTQ or uBAM files of one library can be separated by semicolons. `examples/samplesheet.tsv` is a template.
 
 ## Steps
 
@@ -185,14 +185,14 @@ nextflow run . -profile conda --step diffase \
 | Parameter | Default | Purpose |
 |---|---:|---|
 | **DNA** | | |
-| `--copy_number_level` | `chromosome` | `chromosome` gives every gene the median of its chromosome; `gene` estimates each gene from its own depth (noisier). |
+| `--copy_number_level` | `chromosome` | `chromosome` gives every gene the copy number of its chromosome; `gene` gives each gene the copy number from its own depth, and genes below `--min_gene_depth` keep that of their chromosome. |
 | `--gene_copies` | `primary` | `primary` uses only the canonical locus of a gene; `all` adds the depth of every copy Liftoff annotated. |
 | `--cn_change_threshold` | `1.2` | Fold change from the diploid baseline, up or down, that marks a chromosome as gained or lost. |
 | `--min_haplotype_depth` | `10` | Minimum haplotype-specific depth of a gene to split its copy number between H1 and H2 from its own reads; below it, the gene takes the H1/H2 proportion of its chromosome. |
 | `--min_gene_depth` | `1` | Minimum total depth of a gene to estimate its own copy number with `--copy_number_level gene`. |
 | **RNA** | | |
 | `--rna_strand` | `fw` | Orientation of the reads on their transcript: `fw` for oriented ONT cDNA, `rc` or `both`. |
-| `--oarfish_score` | `0.99999` | Fraction of the best alignment score an alignment needs to be used by Oarfish. Do not use exactly `1`: rounding then drops about 11% of the reads. |
+| `--oarfish_score` | `0.99999` | Minimum score of an alignment, as a fraction of the best score of its read, for Oarfish to use it. |
 | `--oarfish_bootstraps` | `0` | Oarfish inferential replicates, for uncertainty-aware transcript analyses. |
 | `--oarfish_filters` | `false` | Apply the NanoCount filter group of Oarfish (minimum aligned length and fraction of the read, among others); `--oarfish_score` and `--rna_strand` still apply. |
 | `--prior_reads` | `2000` | Reads per feature, split among the libraries, whose positions are used to simulate the priors. |
@@ -216,13 +216,17 @@ A read is H1 or H2 when all its best-scoring alignments fall on one haplotype, a
 
 ### Copy number
 
-DNA reads are classified in the same way. Only Singletons (see [Annotation classes](#annotation-classes)) set the diploid baseline and the chromosome medians. For each chromosome, the total copy number is the median depth of its Singletons over the baseline, and it is split into `CN_H1` and `CN_H2` with the median H1 share of their haplotype-specific depth; a chromosome within `--cn_change_threshold` of diploid is kept at 1:1.
+DNA reads are classified in the same way. Only Singletons (see [Annotation classes](#annotation-classes)) set the diploid baseline and the chromosome medians. The total copy number of a chromosome is twice the median depth of its Singletons divided by the baseline. It is split into `CN_H1` and `CN_H2` by the median H1 proportion of their haplotype-specific depth. A chromosome within `--cn_change_threshold` of diploid is kept at 1:1.
 
-Each allele of a gene takes the copy number of the homologue it lies on: `CN_H1` that of the H1 copy of `Chrom_H1`, and `CN_H2` that of the H2 copy of `Chrom_H2`, the chromosomes of the primary copy Liftoff placed on each haplotype. They differ for genes whose primary copies lie on different chromosomes, mostly in segmental duplications; a gene annotated on one haplotype only takes that chromosome for both. At transcript level, every transcript takes the copy number of its gene.
+Each allele takes the copy number of the chromosome it lies on: `CN_H1` that of `Chrom_H1` in H1, and `CN_H2` that of `Chrom_H2` in H2, where `Chrom_H1` and `Chrom_H2` are the chromosomes of the primary copy of the gene on each haplotype. A gene annotated on one haplotype takes that chromosome for both alleles. Transcripts take the copy number of their gene.
 
 ### Mapping priors
 
-`r1` and `r2` are the probabilities that a read from H1, or from H2, is recognised as haplotype-specific. They depend on whether the read covers a heterozygous site, so on the isoforms and read positions of each feature. For a sample of the real reads, the same interval is cut from the H1 and the H2 copy of its transcript, which replicates the read coverage of each feature on both haplotypes. These simulated reads are aligned and classified like the real ones: `r1` is the fraction of H1 reads called H1, and `r2` the same for H2. The fraction called on the wrong haplotype is reported for QC only; the model assumes it is negligible. Only read positions are used, pooled over the libraries, so all conditions share the same priors.
+`r1` and `r2` are the probabilities that a read from H1, or from H2, is called haplotype-specific. A read is haplotype-specific only when it covers a heterozygous site, so the priors depend on where the reads of each feature lie.
+
+The priors are estimated by simulation. For a sample of the real reads (`--prior_reads` per feature, pooled over the libraries), the interval of each read is taken from the H1 and from the H2 copy of its transcript. The simulated reads are aligned and classified like the real ones: `r1` is the fraction of H1 reads called H1, and `r2` the fraction of H2 reads called H2. A feature gets a prior when at least `--min_prior_reads` reads are simulated from each haplotype. All conditions share the same priors.
+
+The fraction of simulated reads called on the other haplotype (misassignment) is reported for QC and is not part of the model.
 
 ### Model
 
@@ -236,11 +240,17 @@ theta    = 1 / (1 + alpha²)
 thetaRaw = CN_H1 × theta / (CN_H1 × theta + CN_H2 × (1 - theta))
 ```
 
-`theta` is the H1 share of expression per copy: 0.5 when expression follows dosage. `thetaRaw` is the H1 share of total expression, as seen in the reads. On a chromosome with `CN_H1=2`, a gene that follows its dosage has `theta=0.5` and `thetaRaw=2/3`.
+`theta` is the H1 proportion of expression per copy, corrected by copy number: 0.5 when expression follows dosage. `thetaRaw` is the H1 proportion of total expression, as observed in the reads. On a chromosome with `CN_H1=2`, a gene that follows its dosage has `theta=0.5` and `thetaRaw=2/3`.
 
 The priors are those of BayesASE: `alpha ~ lognormal(0, 0.5)`, a gamma hierarchy for library size `beta`, and inverse-gamma(2.01, 0.05) overdispersion. Each feature is fitted on its own with Stan (one chain). Where a group has no read in a category, one read is added to its best-covered library, as in BayesASE, to keep `alpha` finite.
 
-A feature is fitted unless the likelihood is undefined: a mapping prior of 0, both priors of a group at 1, or a haplotype without copies (`not_fitted`). A fitted feature gets `low_prior` when `min(r1, r2) <= --min_prior`: few reads of one haplotype cover a heterozygous site, so its counts barely inform `alpha`, and a small error in `r1` or `r2` becomes a large error in the bias correction `r1/r2`.
+A feature is not fitted (status `not_fitted`) when its likelihood is undefined:
+
+- a mapping prior of 0;
+- both priors of a group equal to 1;
+- a haplotype without copies.
+
+A fitted feature gets status `low_prior` when `min(r1, r2) <= --min_prior`. Few of its reads from one haplotype are haplotype-specific, so its estimate depends strongly on the accuracy of `r1` and `r2`.
 
 ### Tests
 

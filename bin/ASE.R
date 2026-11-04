@@ -70,13 +70,12 @@ gam.mles.data = function(x){
 # known to be below the resolution of the draws, so it is reported as 1/draws.
 tail_ev <- function(x, null) max(2 * min(mean(x > null), mean(x < null)), 1 / length(x))
 
-# Per-copy H1 share a group with copy number (cn_h1, cn_h2) needs for its
-# libraries to show the allelic balance raw_b: the theta of a gene that fully
-# compensates a change of copy number.
+# theta (H1 proportion per copy) that a group with copy number (cn_h1, cn_h2)
+# needs for its libraries to show the observed allelic ratio raw_b.
 compensated_theta <- function(raw_b, cn_h1, cn_h2) cn_h2 * raw_b / (cn_h1 * (1 - raw_b) + cn_h2 * raw_b)
 
-# ROPE margin of every posterior draw: the change in theta that a full
-# compensation of the copy-number change from group B to group A would give.
+# ROPE margin of every posterior draw: the change in theta if group A kept the
+# observed allelic ratio of group B despite its copy number.
 # Without a change, the margin of a 2:1 gain of either haplotype is used, so it
 # means the same on every chromosome.
 rope_margin <- function(theta_b, raw_b, cn_a, cn_b) {
@@ -146,7 +145,7 @@ process_gene <- function(gene_data, group_levels, compiled_model, nsim, nburnin,
       # Every draw on the same side: diffAI_ev is the bound 1/draws.
       status <- if (all(alpha[, 1] > alpha[, 2]) || all(alpha[, 1] < alpha[, 2])) "ev_bound" else "pass"
     }else{theta <- matrix(NA_real_,n_groups,n_groups); alpha <- matrix(NA_real_,n_groups,n_groups); status <- "not_fitted"}
-    # theta is the H1 share per copy. For plotting, the H1 share of the gene's
+    # theta is the H1 proportion per copy. thetaRaw is the H1 proportion of the
     # expression with the group's copy number put back: the allelic balance the
     # libraries show, which sits at 0.5 only where the haplotypes are equally dosed.
     cn_group <- t(sapply(seq_len(n_groups), function(i) c(mean(cnv1[xenv == i]), mean(cnv2[xenv == i]))))
