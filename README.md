@@ -252,7 +252,7 @@ diffAI_ev = 2 × min{ P(alpha_A > alpha_B), P(alpha_A < alpha_B) }
 
 It is the smallest level at which the central credible interval of `alpha_A - alpha_B` excludes 0. It is computed per feature, as in BayesASE, without multiple-testing correction. When every draw falls on one side, it is reported as `1/draws` with status `ev_bound`.
 
-`rope_value` is the posterior probability that `|theta_A - theta_B|` is smaller than the effect that full dosage compensation would have. That effect is computed per feature and per draw: it is the change in `theta` if group A kept the `thetaRaw` of group B despite its own copy number. When both groups have the same H1:H2 ratio, the effect of a 2:1 gain (averaged over gains of H1 and of H2) is used instead. A high `rope_value` therefore means that any difference between the groups is smaller than dosage compensation would produce.
+`rope_value` is the posterior probability that `|theta_A - theta_B|` falls within a region of practical equivalence. Its width is computed per feature and per draw: it is the change in `theta` if group A kept the observed allelic ratio (`thetaRaw`) of group B despite its own copy number. When both groups have the same H1:H2 ratio, the effect of a 2:1 gain (averaged over gains of H1 and of H2) is used instead. A high `rope_value` therefore means that any difference between the groups is smaller than the one an observed allelic ratio unchanged by the copy number would produce.
 
 ### Result columns
 
@@ -268,7 +268,7 @@ It is the smallest level at which the central credible interval of `alpha_A - al
 | `groupX_alphaAI_ev`, `groupX_thetaAI_ev` | Evidence of allelic imbalance within the group (`alpha≠1`). |
 | `delta_theta_mean`, `delta_thetaRaw_mean`, `delta_alpha_mean` | Differences between groups, A minus B. |
 | `diffAI_ev` | Evidence of differential allelic imbalance, corrected by copy number. |
-| `rope_value` | Probability that the difference in `theta` is smaller than full dosage compensation. |
+| `rope_value` | Probability that the difference in `theta` falls within the region of practical equivalence (see [Tests](#tests)). |
 | `status` | `pass`, `ev_bound` (every draw on one side), `low_prior`, `not_fitted` (see [Model](#model)), or `error:` with the message. |
 
 ## Citation
